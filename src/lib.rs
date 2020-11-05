@@ -1,13 +1,12 @@
 mod error;
 
-use serde::{Serialize,Deserialize};
-
+use serde::{Deserialize, Serialize};
 
 pub struct Config {
     pub base_uri: String,
 }
 
-#[derive(Serialize,Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Feature {
     pub name: String,
     #[serde(rename = "type")]
@@ -15,22 +14,22 @@ pub struct Feature {
     pub description: Option<String>,
 }
 
-#[derive(Serialize,Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Flag {
     pub feature: Feature,
     pub enabled: bool,
 }
 
-#[derive(Serialize,Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct User {
-    identifier: String,
+    pub identifier: String,
 }
 
-#[derive(Serialize,Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Trait {
-    identity: User,
-    key: String,
-    value: String,
+    pub identity: User,
+    pub key: String,
+    pub value: String,
 }
 
 pub struct Client {
@@ -39,39 +38,66 @@ pub struct Client {
 }
 
 impl Client {
-    fn build_request(&self, parts: Vec<String>) -> Result<reqwest::blocking::RequestBuilder, error::Error> {
+    pub fn get_features(&self) -> Result<Vec<Flag>, error::Error> {
+        let resp = self
+            .build_request(vec!["flags/"])?
+            .send()?
+            .json::<Vec<Flag>>()?;
+        Ok(resp)
+    }
+
+    pub fn get_user_features(&self, user: User) -> Result<Vec<Flag>, error::Error> {
+        let resp = self
+            .build_request(vec!["flags/", &user.identifier])?
+            .send()?
+            .json::<Vec<Flag>>()?;
+        Ok(resp)
+    }
+    pub fn has_feature(&self, name: &str) -> Result<bool, error::Error> {
+        let flag = self.get_flag(name)?;
+        match flag {
+            Some(f) => Ok(true),
+            None => Ok(false),
+        }
+    }
+    pub fn feature_enabled(&self, name: &str) -> Result<bool, error::Error> {
+        let flag = self.get_flag(name)?;
+        match flag {
+            Some(f) => Ok(f.enabled),
+            None => Ok(false),
+        }
+    }
+    pub fn user_feature_enabled(&self, user: User, name: &str) -> Result<bool, error::Error> {
+        Ok(false)
+    }
+    pub fn get_value(&self, name: &str) {}
+    pub fn get_user_value(&self, user: User, name: &str) {}
+    /*
+    fn get_trait(&self, user: User, key: String) -> Result<Trait, reqwest::Error> {
+    }
+    fn get_traits(&self, user: User) -> Result<Vec<Trait>, reqwest::Error> {}
+    fn update_trair(&self, user: User, toUpdate: Trait) -> Result<Trait, reqwest::Error> {}
+    */
+
+    fn build_request(
+        &self,
+        parts: Vec<&str>,
+    ) -> Result<reqwest::blocking::RequestBuilder, error::Error> {
         let mut url = reqwest::Url::parse(&self.config.base_uri)?;
         for p in parts {
-            url = url.join(&p)?;
+            url = url.join(p)?;
         }
         let client = reqwest::blocking::Client::new();
         Ok(client.get(url).header("X-Environment-Key", &self.api_key))
     }
 
-    pub fn get_features(&self) -> Result<Vec<Flag>, error::Error> {
-        let resp = self.build_request(vec!["flags/".to_string()])?.send()?.json::< Vec<Flag> >()?;
-        Ok(resp)
+    fn get_flag(&self, name: &str) -> Result<Option<Flag>, error::Error> {
+        let features = self.get_features()?;
+        for f in features {
+            if f.feature.name == name {
+                return Ok(Some(f));
+            }
+        }
+        Ok(None)
     }
-
-    pub fn get_user_features(&self, user: User) -> Result<Vec<Flag>, error::Error> {
-        let resp = self.build_request(vec!["flags/".to_string(), user.identifier])?.send()?.json::< Vec<Flag> >()?;
-        Ok(resp)
-    }
-    pub fn has_feature(&self, name: String) -> Result<bool, error::Error> {
-        Ok(false)
-    }
-    pub fn feature_enabled(&self, name: String) -> Result<bool, error::Error> {
-        Ok(false)
-    }
-    pub fn user_feature_enabled(&self, name: String) -> Result<bool, error::Error> {
-        Ok(false)
-    }
-    pub fn get_value(&self, name: String) {}
-    pub fn get_user_value(&self, user: User, name: String) {}
-    /*
-       fn get_trait(&self, user: User, key: String) -> Result<Trait, reqwest::Error> {
-       }
-       fn get_traits(&self, user: User) -> Result<Vec<Trait>, reqwest::Error> {}
-       fn update_trair(&self, user: User, toUpdate: Trait) -> Result<Trait, reqwest::Error> {}
-       */
 }

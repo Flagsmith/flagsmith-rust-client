@@ -53,23 +53,31 @@ impl Client {
             .json::<Vec<Flag>>()?;
         Ok(resp)
     }
+    
     pub fn has_feature(&self, name: &str) -> Result<bool, error::Error> {
-        let flag = self.get_flag(name)?;
+        let flag = self.get_flag(self.get_features()?, name);
         match flag {
             Some(f) => Ok(true),
             None => Ok(false),
         }
     }
+    
     pub fn feature_enabled(&self, name: &str) -> Result<bool, error::Error> {
-        let flag = self.get_flag(name)?;
+        let flag = self.get_flag(self.get_features()?, name);
         match flag {
             Some(f) => Ok(f.enabled),
             None => Ok(false),
         }
     }
+
     pub fn user_feature_enabled(&self, user: User, name: &str) -> Result<bool, error::Error> {
-        Ok(false)
+        let flag = self.get_flag(self.get_user_features(user)?, name);
+        match flag {
+            Some(f) => Ok(f.enabled),
+            None => Ok(false),
+        }
     }
+
     pub fn get_value(&self, name: &str) {}
     pub fn get_user_value(&self, user: User, name: &str) {}
     /*
@@ -91,13 +99,12 @@ impl Client {
         Ok(client.get(url).header("X-Environment-Key", &self.api_key))
     }
 
-    fn get_flag(&self, name: &str) -> Result<Option<Flag>, error::Error> {
-        let features = self.get_features()?;
+    fn get_flag(&self, features: Vec<Flag>, name: &str) -> Option<Flag> {
         for f in features {
             if f.feature.name == name {
-                return Ok(Some(f));
+                return Some(f);
             }
         }
-        Ok(None)
+        None
     }
 }

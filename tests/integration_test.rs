@@ -8,6 +8,7 @@ const TEST_FLAG_NAME: &str = "test_flag";
 const TEST_FLAG_VALUE: bool = true;
 const TEST_TRAIT_NAME: &str = "test_trait";
 const TEST_TRAIT_VALUE: &str = "sample trait value";
+const TEST_TRAIT_NEW_VALUE: &str = "new value";
 const INVALID_NAME: &str = "invalid_name_for_tests";
 
 fn test_user() -> User {
@@ -81,7 +82,7 @@ fn test_get_value() {
 
     let val = get_client().get_value("boolean_feature").unwrap().unwrap();
     match val {
-        Value::Bool(v) => assert!(v == true),
+        Value::Bool(v) => assert!(v == TEST_FLAG_VALUE),
         _ => assert!(false),
     }
 }
@@ -111,4 +112,20 @@ fn test_get_trait() {
         .get_trait(&test_user(), TEST_TRAIT_NAME)
         .unwrap();
     assert!(t.value == TEST_TRAIT_VALUE)
+}
+
+#[test]
+fn test_update_trait() {
+    let client = get_client();
+    let mut old_trait = client.get_trait(&different_user(), TEST_TRAIT_NAME).unwrap();
+
+    old_trait.value = String::from(TEST_TRAIT_NEW_VALUE);
+    let updated = client.update_trait(&different_user(), &old_trait).unwrap();
+    assert!(TEST_TRAIT_NEW_VALUE == updated.value);
+
+    let t = client.get_trait(&different_user(), TEST_TRAIT_NAME).unwrap();
+    assert!(TEST_TRAIT_NEW_VALUE == t.value);
+
+    old_trait.value = String::from("old value");
+    client.update_trait(&different_user(), &old_trait).unwrap();
 }

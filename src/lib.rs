@@ -142,8 +142,21 @@ impl Client {
         Ok(traits)
     }
 
-    pub fn update_trair(&self, user: &User, to_update: Trait) -> Result<Trait, error::Error> {
-        Err(error::Error::from(String::from("not implemented!")))
+    pub fn update_trait(&self, user: &User, to_update: &Trait) -> Result<Trait, error::Error> {
+        let update = Trait{
+            identity: Some(User{identifier: user.identifier.clone()}),
+            key: to_update.key.clone(),
+            value: to_update.value.clone(),
+        };
+        let url = reqwest::Url::parse(&self.config.base_uri)?.join("traits/")?;
+        let client = reqwest::blocking::Client::new();
+        let resp = client.post(url)
+            .header("X-Environment-Key", &self.api_key)
+            .json(&update)
+            .send()?
+            .json::<Trait>()?;
+        
+        Ok(resp)
     }
 
     fn build_request(

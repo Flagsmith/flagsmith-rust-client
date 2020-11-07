@@ -11,6 +11,7 @@ pub struct Error {
 pub enum ErrorKind {
     ParseError,
     RequestError,
+    AppError,
 }
 
 impl fmt::Display for Error {
@@ -18,6 +19,7 @@ impl fmt::Display for Error {
         match self.kind {
             ErrorKind::ParseError => write!(f, "URL parsing error: {}", &self.desc),
             ErrorKind::RequestError => write!(f, "REST API request error: {}", &self.desc),
+            ErrorKind::AppError => write!(f, "Application error: {}", &self.desc),
         }
     }
 }
@@ -36,6 +38,15 @@ impl From<reqwest::Error> for Error {
         Error {
             kind: ErrorKind::RequestError,
             desc: e.to_string(),
+        }
+    }
+}
+
+impl From<String> for Error {
+    fn from(s: String) -> Self {
+        Error {
+            kind: ErrorKind::AppError,
+            desc: s,
         }
     }
 }

@@ -63,3 +63,25 @@ fn test_feature_enabled() {
     let enabled = get_client().feature_enabled(TEST_FLAG_NAME).unwrap();
     assert!(enabled);
 }
+
+#[test]
+fn test_get_value() {
+    use bullettrain::Value;
+    let val = get_client().get_value(TEST_FEATURE_NAME).unwrap().unwrap();
+    match val {
+        Value::String(v) => assert!(v == TEST_FEATURE_VALUE),
+        _ => assert!(false),
+    }
+
+    let val = get_client().get_value("integer_feature").unwrap().unwrap();
+    match val {
+        Value::Int(v) => assert!(v == 200),
+        _ => assert!(false),
+    }
+
+    let val = get_client().get_value("boolean_feature").unwrap().unwrap();
+    match val {
+        Value::Bool(v) => assert!(v == true),
+        _ => assert!(false),
+    }
+}

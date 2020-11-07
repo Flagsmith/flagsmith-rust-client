@@ -15,8 +15,18 @@ pub struct Feature {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Value {
+    String(String),
+    Int(i64),
+    Bool(bool),
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Flag {
     pub feature: Feature,
+    #[serde(rename = "feature_state_value")]
+    pub state_value: Option<Value>,
     pub enabled: bool,
 }
 
@@ -24,6 +34,7 @@ pub struct Flag {
 pub struct User {
     pub identifier: String,
 }
+
 
 #[derive(Serialize, Deserialize)]
 pub struct Trait {
@@ -57,7 +68,7 @@ impl Client {
     pub fn has_feature(&self, name: &str) -> Result<bool, error::Error> {
         let flag = self.get_flag(self.get_features()?, name);
         match flag {
-            Some(f) => Ok(true),
+            Some(_) => Ok(true),
             None => Ok(false),
         }
     }
@@ -78,7 +89,14 @@ impl Client {
         }
     }
 
-    pub fn get_value(&self, name: &str) {}
+    pub fn get_value(&self, name: &str) -> Result<Option<Value>, error::Error> {
+        let flag = self.get_flag(self.get_features()?, name);
+        match flag {
+            Some(f) => Ok(f.state_value),
+            None => Err(error::Error::from(format!("unknown feature {}", name))),
+        }
+    }
+
     pub fn get_user_value(&self, user: User, name: &str) {}
     /*
     fn get_trait(&self, user: User, key: String) -> Result<Trait, reqwest::Error> {

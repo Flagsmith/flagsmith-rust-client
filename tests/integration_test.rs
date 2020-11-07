@@ -85,3 +85,13 @@ fn test_get_value() {
         _ => assert!(false),
     }
 }
+
+#[test]
+fn test_get_user_value() {
+    use bullettrain::Value;
+    let val = get_client().get_user_value(test_user(), TEST_FEATURE_NAME).unwrap().unwrap();
+    match val {
+        Value::String(v) => assert!(v == TEST_USER_FEATURE_VALUE),
+        _ => assert!(false),
+    }
+}

@@ -85,7 +85,7 @@ impl Client {
         let flag = self.get_flag(self.get_user_features(user)?, name);
         match flag {
             Some(f) => Ok(f.enabled),
-            None => Ok(false),
+            None => Err(error::Error::from(format!("unknown feature {}", name))),
         }
     }
 
@@ -97,7 +97,14 @@ impl Client {
         }
     }
 
-    pub fn get_user_value(&self, user: User, name: &str) {}
+    pub fn get_user_value(&self, user: User, name: &str) -> Result<Option<Value>, error::Error> {
+        let flag = self.get_flag(self.get_user_features(user)?, name);
+        match flag {
+            Some(f) => Ok(f.state_value),
+            None => Err(error::Error::from(format!("unknown feature {}", name))),
+        }
+    }
+
     /*
     fn get_trait(&self, user: User, key: String) -> Result<Trait, reqwest::Error> {
     }

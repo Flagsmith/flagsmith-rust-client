@@ -35,12 +35,18 @@ pub struct User {
     pub identifier: String,
 }
 
-
 #[derive(Serialize, Deserialize)]
 pub struct Trait {
-    pub identity: User,
+    pub identity: Option<User>,
+    #[serde(rename = "trait_key")]
     pub key: String,
+    #[serde(rename = "trait_value")]
     pub value: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TraitResponse {
+    traits: Vec<Trait>,
 }
 
 pub struct Client {
@@ -57,14 +63,14 @@ impl Client {
         Ok(resp)
     }
 
-    pub fn get_user_features(&self, user: User) -> Result<Vec<Flag>, error::Error> {
+    pub fn get_user_features(&self, user: &User) -> Result<Vec<Flag>, error::Error> {
         let resp = self
             .build_request(vec!["flags/", &user.identifier])?
             .send()?
             .json::<Vec<Flag>>()?;
         Ok(resp)
     }
-    
+
     pub fn has_feature(&self, name: &str) -> Result<bool, error::Error> {
         let flag = self.get_flag(self.get_features()?, name);
         match flag {
@@ -72,7 +78,7 @@ impl Client {
             None => Ok(false),
         }
     }
-    
+
     pub fn feature_enabled(&self, name: &str) -> Result<bool, error::Error> {
         let flag = self.get_flag(self.get_features()?, name);
         match flag {
@@ -81,7 +87,7 @@ impl Client {
         }
     }
 
-    pub fn user_feature_enabled(&self, user: User, name: &str) -> Result<bool, error::Error> {
+    pub fn user_feature_enabled(&self, user: &User, name: &str) -> Result<bool, error::Error> {
         let flag = self.get_flag(self.get_user_features(user)?, name);
         match flag {
             Some(f) => Ok(f.enabled),
@@ -97,7 +103,7 @@ impl Client {
         }
     }
 
-    pub fn get_user_value(&self, user: User, name: &str) -> Result<Option<Value>, error::Error> {
+    pub fn get_user_value(&self, user: &User, name: &str) -> Result<Option<Value>, error::Error> {
         let flag = self.get_flag(self.get_user_features(user)?, name);
         match flag {
             Some(f) => Ok(f.state_value),
@@ -105,12 +111,40 @@ impl Client {
         }
     }
 
-    /*
-    fn get_trait(&self, user: User, key: String) -> Result<Trait, reqwest::Error> {
+    pub fn get_trait(&self, user: &User, key: &str) -> Result<Trait, error::Error> {
+        let mut traits = self.get_traits(user, vec![key])?;
+        match traits.len() {
+            1 => Ok(traits.remove(0)),
+            _ => Err(error::Error::from(format!(
+                "unknown trait {} for user {}",
+                key, &user.identifier
+            ))),
+        }
     }
-    fn get_traits(&self, user: User) -> Result<Vec<Trait>, reqwest::Error> {}
-    fn update_trair(&self, user: User, toUpdate: Trait) -> Result<Trait, reqwest::Error> {}
-    */
+
+    pub fn get_traits(&self, user: &User, keys: Vec<&str>) -> Result<Vec<Trait>, error::Error> {
+        let resp = self
+            .build_request(vec!["identities/"])?
+            .query(&[("identifier", &user.identifier)])
+            .send()?
+            .json::<TraitResponse>()?;
+
+        let mut traits = resp.traits;
+        if keys.len() == 0 {
+            return Ok(traits);
+        }
+
+        traits.retain(|t| {
+            let tk: &String = &t.key;
+            keys.iter().any(|k| tk == k)
+        });
+
+        Ok(traits)
+    }
+
+    pub fn update_trair(&self, user: &User, to_update: Trait) -> Result<Trait, error::Error> {
+        Err(error::Error::from(String::from("not implemented!")))
+    }
 
     fn build_request(
         &self,

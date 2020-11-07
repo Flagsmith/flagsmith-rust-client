@@ -41,7 +41,7 @@ fn test_get_features() {
 
 #[test]
 fn test_get_user_features() {
-    let features = get_client().get_user_features(test_user()).unwrap();
+    let features = get_client().get_user_features(&test_user()).unwrap();
     for f in features.iter() {
         assert!(f.feature.name != "");
     }
@@ -89,9 +89,26 @@ fn test_get_value() {
 #[test]
 fn test_get_user_value() {
     use bullettrain::Value;
-    let val = get_client().get_user_value(test_user(), TEST_FEATURE_NAME).unwrap().unwrap();
+    let val = get_client()
+        .get_user_value(&test_user(), TEST_FEATURE_NAME)
+        .unwrap()
+        .unwrap();
     match val {
         Value::String(v) => assert!(v == TEST_USER_FEATURE_VALUE),
         _ => assert!(false),
     }
+}
+
+#[test]
+fn test_get_traits() {
+    let traits = get_client().get_traits(&test_user(), vec![]).unwrap();
+    assert!(traits.len() == 2)
+}
+
+#[test]
+fn test_get_trait() {
+    let t = get_client()
+        .get_trait(&test_user(), TEST_TRAIT_NAME)
+        .unwrap();
+    assert!(t.value == TEST_TRAIT_VALUE)
 }

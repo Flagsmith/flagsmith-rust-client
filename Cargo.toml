@@ -3,6 +3,13 @@ name = "bullettrain"
 version = "0.1.0"
 authors = ["Tomasz Zdybał <tomek@zdybal.lap.pl>"]
 edition = "2018"
+license = "BSD-3-Clause"
+description = "Bullet Train SDK for Rust"
+homepage = "https://bullet-train.io/"
+repository = "https://github.com/BulletTrainHQ/bullet-train-rust-client"
+readme = "README.md"
+categories = ["config", "api-bindings"]
+keywords = ["BulletTrain", "feature-flag", "remote-config"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -37,7 +37,7 @@ To get the configuration value for feature flag value:
 ```rust
 use bullettrain::{Client,Value};
 
-let bt = bullettrain::Client::new("<Your API Key>");
+let bt = Client::new("<Your API Key>");
 
 if let Some(Value::String(s)) = bt.get_value("cart_abundant_notification_ab_test")? {
     println!("{}", s);

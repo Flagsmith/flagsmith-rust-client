@@ -52,6 +52,16 @@ fn test_has_value() {
 }
 
 #[test]
+fn test_has_user_value() {
+    let client = Client::new(API_KEY);
+    let ok = client.has_user_feature(&test_user(), TEST_FEATURE_NAME).unwrap();
+    assert!(ok);
+
+    let ok = client.has_user_feature(&test_user(), INVALID_NAME).unwrap();
+    assert!(ok == false);
+}
+
+#[test]
 fn test_feature_enabled() {
     let client = Client::new(API_KEY);
     let enabled = client.feature_enabled(TEST_FEATURE_NAME).unwrap();

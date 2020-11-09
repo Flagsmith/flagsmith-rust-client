@@ -132,6 +132,15 @@ impl Client {
         }
     }
 
+    /// Returns information whether given feature is defined for given user.
+    pub fn has_user_feature(&self, user: &User, name: &str) -> Result<bool, error::Error> {
+        let flag = self.get_flag(self.get_user_features(user)?, name);
+        match flag {
+            Some(_) => Ok(true),
+            None => Ok(false),
+        }
+    }
+
     /// Returns information whether given feature flag is enabled.
     pub fn feature_enabled(&self, name: &str) -> Result<bool, error::Error> {
         let flag = self.get_flag(self.get_features()?, name);

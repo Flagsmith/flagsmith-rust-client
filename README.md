@@ -1,3 +1,7 @@
+[![crates.io](https://img.shields.io/crates/v/bullettrain.svg)](https://crates.io/crates/bullettrain)
+[![Docs](https://docs.rs/bullettrain/badge.svg)](https://docs.rs/bullettrain/)
+[![Rust](https://github.com/BulletTrainHQ/bullet-train-rust-client/workflows/Rust/badge.svg)](https://github.com/BulletTrainHQ/bullet-train-rust-client/actions?query=workflow%3ARust)
+
 <img width="100%" src="https://raw.githubusercontent.com/SolidStateGroup/bullet-train-frontend/master/hero.png"/>
 
 # Bullet Train SDK for Rust

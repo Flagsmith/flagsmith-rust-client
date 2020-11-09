@@ -1,10 +1,7 @@
 mod error;
-
 use serde::{Deserialize, Serialize};
 
-pub struct Config {
-    pub base_uri: String,
-}
+const DEFAULT_BASE_URI: &str = "https://api.bullet-train.io/api/v1/";
 
 #[derive(Serialize, Deserialize)]
 pub struct Feature {
@@ -44,17 +41,24 @@ pub struct Trait {
     pub value: String,
 }
 
+pub struct Client {
+    pub api_key: String,
+    pub base_uri: String,
+}
+
 #[derive(Serialize, Deserialize)]
 struct TraitResponse {
     traits: Vec<Trait>,
 }
 
-pub struct Client {
-    pub api_key: String,
-    pub config: Config,
-}
-
 impl Client {
+    pub fn new(api_key: &str) -> Client {
+        return Client {
+            api_key: String::from(api_key),
+            base_uri: String::from(DEFAULT_BASE_URI),
+        };
+    }
+
     pub fn get_features(&self) -> Result<Vec<Flag>, error::Error> {
         let resp = self
             .build_request(vec!["flags/"])?
@@ -130,7 +134,7 @@ impl Client {
             .json::<TraitResponse>()?;
 
         let mut traits = resp.traits;
-        if keys.len() == 0 {
+        if keys.is_empty() {
             return Ok(traits);
         }
 
@@ -143,19 +147,22 @@ impl Client {
     }
 
     pub fn update_trait(&self, user: &User, to_update: &Trait) -> Result<Trait, error::Error> {
-        let update = Trait{
-            identity: Some(User{identifier: user.identifier.clone()}),
+        let update = Trait {
+            identity: Some(User {
+                identifier: user.identifier.clone(),
+            }),
             key: to_update.key.clone(),
             value: to_update.value.clone(),
         };
-        let url = reqwest::Url::parse(&self.config.base_uri)?.join("traits/")?;
+        let url = reqwest::Url::parse(&self.base_uri)?.join("traits/")?;
         let client = reqwest::blocking::Client::new();
-        let resp = client.post(url)
+        let resp = client
+            .post(url)
             .header("X-Environment-Key", &self.api_key)
             .json(&update)
             .send()?
             .json::<Trait>()?;
-        
+
         Ok(resp)
     }
 
@@ -163,7 +170,7 @@ impl Client {
         &self,
         parts: Vec<&str>,
     ) -> Result<reqwest::blocking::RequestBuilder, error::Error> {
-        let mut url = reqwest::Url::parse(&self.config.base_uri)?;
+        let mut url = reqwest::Url::parse(&self.base_uri)?;
         for p in parts {
             url = url.join(p)?;
         }

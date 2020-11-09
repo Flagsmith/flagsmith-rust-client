@@ -1,4 +1,4 @@
-use bullettrain::{Client,User,Value};
+use bullettrain::{Client, User, Value};
 
 const API_KEY: &str = "MgfUaRCvvZMznuQyqjnQKt";
 const TEST_FEATURE_NAME: &str = "test_feature";
@@ -75,10 +75,7 @@ fn test_get_value() {
         _ => assert!(false),
     }
 
-    let val = client
-        .get_value("boolean_feature")
-        .unwrap()
-        .unwrap();
+    let val = client.get_value("boolean_feature").unwrap().unwrap();
     match val {
         Value::Bool(v) => assert!(v == TEST_FLAG_VALUE),
         _ => assert!(false),
@@ -107,7 +104,7 @@ fn test_get_traits() {
 
 #[test]
 fn test_get_trait() {
-    let t =Client::new(API_KEY)
+    let t = Client::new(API_KEY)
         .get_trait(&test_user(), TEST_TRAIT_NAME)
         .unwrap();
     assert!(t.value == TEST_TRAIT_VALUE)

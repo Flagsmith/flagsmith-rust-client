@@ -1,12 +1,14 @@
 use std::convert::From;
 use std::fmt;
 
+/// Wraps several types of errors.
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
     desc: String,
 }
 
+/// Defines error kind.
 #[derive(Debug)]
 pub enum ErrorKind {
     ParseError,

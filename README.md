@@ -48,7 +48,7 @@ if let Some(Value::String(s)) = bt.get_value("cart_abundant_notification_ab_test
 }
 ```
 
-More examples can be found in the [Tests](test/integration_test.rs)
+More examples can be found in the [Tests](tests/integration_test.rs)
 
 ## Override default configuration
 

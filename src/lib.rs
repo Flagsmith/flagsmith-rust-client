@@ -28,7 +28,7 @@ pub const DEFAULT_BASE_URI: &str = "https://api.bullet-train.io/api/v1/";
 pub struct Feature {
     pub name: String,
     #[serde(rename = "type")]
-    pub kind: String,
+    pub kind: Option<String>,
     pub description: Option<String>,
 }
 

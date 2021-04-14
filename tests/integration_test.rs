@@ -10,6 +10,7 @@ const TEST_TRAIT_NAME: &str = "test_trait";
 const TEST_TRAIT_VALUE: &str = "sample trait value";
 const TEST_TRAIT_NEW_VALUE: &str = "new value";
 const INVALID_NAME: &str = "invalid_name_for_tests";
+const TEST_DISABLED_FLAG: &str = "disabled_flag";
 
 fn test_user() -> User {
     User {
@@ -25,7 +26,7 @@ fn different_user() -> User {
 #[test]
 fn test_get_features() {
     let features = Client::new(API_KEY).get_features().unwrap();
-    assert_eq!(features.len(), 4);
+    assert_eq!(features.len(), 5);
     for f in features.iter() {
         assert!(f.feature.name != "");
     }
@@ -64,10 +65,15 @@ fn test_has_user_value() {
 #[test]
 fn test_feature_enabled() {
     let client = Client::new(API_KEY);
-    let enabled = client.feature_enabled(TEST_FEATURE_NAME).unwrap();
-    assert!(!enabled);
     let enabled = client.feature_enabled(TEST_FLAG_NAME).unwrap();
     assert!(enabled);
+}
+
+#[test]
+fn test_feature_disabled() {
+    let client = Client::new(API_KEY);
+    let enabled = client.feature_enabled(TEST_DISABLED_FLAG).unwrap();
+    assert!(!enabled);
 }
 
 #[test]

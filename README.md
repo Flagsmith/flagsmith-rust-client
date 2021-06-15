@@ -2,7 +2,7 @@
 [![Docs](https://docs.rs/bullettrain/badge.svg)](https://docs.rs/bullettrain/)
 [![Rust](https://github.com/BulletTrainHQ/bullet-train-rust-client/workflows/Rust/badge.svg)](https://github.com/BulletTrainHQ/bullet-train-rust-client/actions?query=workflow%3ARust)
 
-<img width="100%" src="https://raw.githubusercontent.com/SolidStateGroup/bullet-train-frontend/master/hero.png"/>
+<img width="100%" src="https://github.com/Flagsmith/flagsmith/raw/main/static-files/hero.png"/>
 
 # Flagsmith Rust SDK
 

@@ -4,12 +4,12 @@ version = "0.2.0"
 authors = ["Tomasz Zdybał <tomek@zdybal.lap.pl>"]
 edition = "2018"
 license = "BSD-3-Clause"
-description = "Bullet Train SDK for Rust"
-homepage = "https://bullet-train.io/"
-repository = "https://github.com/BulletTrainHQ/bullet-train-rust-client"
+description = "Flagsmith SDK for Rust"
+homepage = "https://flagsmith.com/"
+repository = "https://github.com/Flagsmith/flagsmith-rust-client"
 readme = "README.md"
 categories = ["config", "api-bindings"]
-keywords = ["BulletTrain", "feature-flag", "remote-config"]
+keywords = ["Flagsmith", "feature-flag", "remote-config"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

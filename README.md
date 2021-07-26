@@ -1,8 +1,8 @@
 [![crates.io](https://img.shields.io/crates/v/bullettrain.svg)](https://crates.io/crates/bullettrain)
 [![Docs](https://docs.rs/bullettrain/badge.svg)](https://docs.rs/bullettrain/)
-[![Rust](https://github.com/BulletTrainHQ/bullet-train-rust-client/workflows/Rust/badge.svg)](https://github.com/BulletTrainHQ/bullet-train-rust-client/actions?query=workflow%3ARust)
+[![Rust](https://github.com/Flagsmith/flagsmith-rust-client/workflows/Rust/badge.svg)](https://github.com/Flagsmith/flagsmith-rust-client/actions?query=workflow%3ARust)
 
-<img width="100%" src="https://github.com/Flagsmith/flagsmith/raw/main/static-files/hero.png"/>
+![Flagsmith Screenshot](https://github.com/Flagsmith/flagsmith/raw/main/static-files/hero.png)
 
 # Flagsmith Rust SDK
 
@@ -16,7 +16,7 @@ For full documentation visit [https://docs.flagsmith.com/clients/rust/](https://
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](https://gist.github.com/kyle-ssg/c36a03aebe492e45cbd3eefb21cb0486) for details on our code of conduct, and the process for submitting pull requests
+Please read [CONTRIBUTING.md](https://docs.flagsmith.com/platform/contributing) for details on our code of conduct, and the process for submitting pull requests
 
 ## Getting Help
 

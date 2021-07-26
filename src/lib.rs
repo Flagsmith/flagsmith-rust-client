@@ -1,10 +1,10 @@
-//! bullettrain create provides client for bullet-train.io API.
+//! flagsmith create provides client for flagsmith.com API.
 //!
 //! # Example
 //!
 //! ```rust
 //! # const API_KEY: &str = "MgfUaRCvvZMznuQyqjnQKt";
-//! use bullettrain::{Client,Value};
+//! use flagsmith::{Client,Value};
 //!
 //! let client = Client::new(API_KEY);
 //! if client.feature_enabled("test_feature")? {
@@ -14,14 +14,14 @@
 //!     }
 //!     // ...
 //! }
-//! # Ok::<(), bullettrain::error::Error>(())
+//! # Ok::<(), flagsmith::error::Error>(())
 //! ```
 
 pub mod error;
 use serde::{Deserialize, Serialize};
 
-/// Default address of BulletTrain API.
-pub const DEFAULT_BASE_URI: &str = "https://api.bullet-train.io/api/v1/";
+/// Default address of Flagsmith API.
+pub const DEFAULT_BASE_URI: &str = "https://api.flagsmith.com/api/v1/";
 
 /// Contains core information about feature.
 #[derive(Serialize, Deserialize)]
@@ -68,7 +68,7 @@ pub struct Trait {
     pub value: String,
 }
 
-/// Provides various methods to interact with BulletTrain API.
+/// Provides various methods to interact with Flagsmith API.
 ///
 /// Static method new can be used to create instance configured with default API address.
 /// To use custom API address, use struct constructor.
@@ -76,7 +76,7 @@ pub struct Trait {
 /// # Example
 ///
 /// ```rust
-/// let client = bullettrain::Client {
+/// let client = flagsmith::Client {
 ///     api_key: String::from("secret key"),
 ///     base_uri: String::from("https://features.on.my.own.server/api/v1/"),
 /// };

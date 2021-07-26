@@ -1,5 +1,5 @@
-[![crates.io](https://img.shields.io/crates/v/bullettrain.svg)](https://crates.io/crates/bullettrain)
-[![Docs](https://docs.rs/bullettrain/badge.svg)](https://docs.rs/bullettrain/)
+[![crates.io](https://img.shields.io/crates/v/flagsmith.svg)](https://crates.io/crates/flagsmith)
+[![Docs](https://docs.rs/bullettrain/badge.svg)](https://docs.rs/flagsmith/)
 [![Rust](https://github.com/Flagsmith/flagsmith-rust-client/workflows/Rust/badge.svg)](https://github.com/Flagsmith/flagsmith-rust-client/actions?query=workflow%3ARust)
 
 ![Flagsmith Screenshot](https://github.com/Flagsmith/flagsmith/raw/main/static-files/hero.png)

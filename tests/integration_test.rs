@@ -1,4 +1,4 @@
-use bullettrain::{Client, User, Value};
+use flagsmith::{Client, User, Value};
 
 const API_KEY: &str = "MgfUaRCvvZMznuQyqjnQKt";
 const TEST_FEATURE_NAME: &str = "test_feature";

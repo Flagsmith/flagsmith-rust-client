@@ -1,5 +1,6 @@
 use std::{collections::HashMap};
 use flagsmith_flag_engine::features::FeatureState;
+use flagsmith_flag_engine::types::FlagsmithValue;
 
 pub struct DefaultFlag {
     enabled: bool,
@@ -10,7 +11,7 @@ pub struct DefaultFlag {
 #[derive(Clone, Debug)]
 pub struct Flag {
     enabled: bool,
-    value: String,
+    value: FlagsmithValue,
     is_default: bool,
     feature_id: u32,
     feature_name: String,
@@ -20,7 +21,7 @@ impl Flag {
     pub fn from_feature_state(feature_state: FeatureState, identity_id: Option<&str>) -> Flag {
         return Flag {
             enabled: feature_state.enabled,
-            value: feature_state.get_value(identity_id).value,
+            value: feature_state.get_value(identity_id),
             is_default: false,
             feature_name: feature_state.feature.name,
             feature_id: feature_state.feature.id,

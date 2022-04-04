@@ -39,7 +39,7 @@ impl AnalyticsProcessor {
                         .or_insert(1);
                     if (chrono::Utc::now() - last_flushed).num_seconds() > ANALYTICS_TIMER as i64 {
                         flush(&client, analytics_data, &analytics_endpoint);
-                            last_flushed = chrono::Utc::now();
+                        last_flushed = chrono::Utc::now();
                     }
                     thread::sleep(std::time::Duration::from_secs(ANALYTICS_TIMER));
                 }

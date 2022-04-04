@@ -144,7 +144,7 @@ impl Flagsmith {
     //     let flags = flagsmith.get_identity_flags("user_identifier".to_string(), traits);
     // }
     //```
-    pub fn get_identity_flags(&self, identifier: String, traits: Vec<Trait>) {
+    pub fn get_identity_flags(&self, identifier: String, traits: Vec<Trait>) -> models::Flags{
     }
 }
 fn get_environment_from_api(

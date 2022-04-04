@@ -1,10 +1,10 @@
 use reqwest::header::{self, HeaderMap};
 use std::{collections::HashMap, fmt::{self, format}, string, thread, time::Duration};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use flagsmith_flag_engine::environments::builders::build_environment_struct;
 use flagsmith_flag_engine::environments::Environment;
+mod models;
 mod analytics;
-
 const DEFAULT_API_URL: &str = "https://api.flagsmith.com/api/v1/";
 use super::error;
 pub struct FlagsmithOptions{
@@ -32,7 +32,7 @@ pub struct Flagsmith {
     identities_url: String,
     environment_url: String,
     options: FlagsmithOptions,
-    datastore: Rc<DataStore>,
+    datastore: Arc<Mutex<DataStore>>,
     environment: Option<Environment>
 
     //  environment_key: String,
@@ -46,7 +46,7 @@ pub struct Flagsmith {
 
 }
 struct DataStore{
-    environment: Environment
+    environment: Option<Environment>
 
 }
 impl Flagsmith {
@@ -75,43 +75,60 @@ impl Flagsmith {
         let environment_flags_url = format!("{}flags/", flagsmith_options.api_url);
         let identities_url = format!("{}identities/",flagsmith_options.api_url);
         let environment_url = format!("{}environment-document/", flagsmith_options.api_url);
-        let mut flagsmith = Rc::new(Flagsmith {
-            client: client,
-            environment_flags_url:environment_flags_url,
-            environment_url: environment_url,
+        let ds = Arc::new(Mutex::new(DataStore{environment:None}));
+        let flagsmith = Flagsmith {
+            client: client.clone(),
+            environment_flags_url,
+            environment_url: environment_url.clone(),
             identities_url: identities_url,
             options: flagsmith_options,
-            environment: None
-        });
-        let flagsmith = Rc::clone(&flagsmith);
-        thread::spawn(move ||{
-            for i in 1..10{
-                println!("updating environment");
-                flagsmith.update_environment();
-                thread::sleep(Duration::from_secs(10));
+            environment: None,
+                datastore: Arc::clone(&ds)
+        };
+        let ds = Arc::clone(&ds);
+        thread::spawn(move ||{ loop{
+                println!("updating environment From Thread");
+                let  environment = Some(get_environment_from_api(client.clone(), environment_url.clone()).unwrap());
+                let mut data =  ds.lock().unwrap();
+                data.environment = environment;
+                //flagsmith.update_environment();
+                thread::sleep(Duration::from_millis(50));
             }
         });
         return flagsmith;
     }
     pub fn update_environment(&mut self) -> Result<(), error::Error>{
-        self.environment = Some(self.get_environment_from_api()?);
+        println!("Updating environment from main thread");
+        let mut data = self.datastore.lock().unwrap();
+        data.environment = Some(get_environment_from_api(self.client.clone(), self.environment_url.clone())?);
         return Ok(());
     }
-    fn get_environment_from_api(&self) -> Result<Environment, error::Error>{
-        let method = reqwest::Method::GET;
-        let url=  self.environment_url.clone();
-        let json_document = self.get_json_response(method, url)?;
-        let environment = build_environment_struct(json_document);
-        return Ok(environment)
+    pub fn get_environment_flags(&self) -> models::Flags{
+        let data = self.datastore.lock().unwrap();
+        let environment = data.environment.as_ref().unwrap();
+
+        // if data.environment.is_some(){
+        // }
+
+        return self.get_environment_flags_from_document(environment);
 
     }
+    fn get_environment_flags_from_document(&self, environment: &Environment) -> models::Flags {
+        return models::Flags::from_feature_states(&environment.feature_states, None)
+    }
+}
+fn get_environment_from_api(client: reqwest::blocking::Client, environment_url: String) -> Result<Environment, error::Error>{
+    let method = reqwest::Method::GET;
+    let json_document = get_json_response(client,method, environment_url)?;
+    let environment = build_environment_struct(json_document);
+    return Ok(environment)
 
-    fn get_json_response(&self, method: reqwest::Method, url: String) -> Result<serde_json::Value, error::Error>{
-        let response = self.client.request(method, url).send()?;
-        if response.status().is_success(){
-            return Ok(response.json()?)
-        }else {
-            return Err(error::Error::from("Request returned non 2xx".to_string()))
-        }
+}
+fn get_json_response(client: reqwest::blocking::Client, method: reqwest::Method, url: String) -> Result<serde_json::Value, error::Error>{
+    let response = client.request(method, url).send()?;
+    if response.status().is_success(){
+        return Ok(response.json()?)
+    }else {
+        return Err(error::Error::from("Request returned non 2xx".to_string()))
     }
 }

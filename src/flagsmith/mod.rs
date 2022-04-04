@@ -1,5 +1,6 @@
 use flagsmith_flag_engine::environments::builders::build_environment_struct;
 use flagsmith_flag_engine::environments::Environment;
+use flagsmith_flag_engine::identities::Trait;
 use reqwest::header::{self, HeaderMap};
 use std::sync::{Arc, Mutex};
 use std::{
@@ -114,7 +115,7 @@ impl Flagsmith {
     pub fn get_environment_flags(&self) -> models::Flags {
         let data = self.datastore.lock().unwrap();
         let environment = data.environment.as_ref().unwrap();
-
+        //TODO: Add fetch from api
         // if data.environment.is_some(){
         // }
 
@@ -122,6 +123,28 @@ impl Flagsmith {
     }
     fn get_environment_flags_from_document(&self, environment: &Environment) -> models::Flags {
         return models::Flags::from_feature_states(&environment.feature_states, None);
+    }
+    // Returns all the flags for the current environment for a given identity. Will also
+    // upsert all traits to the Flagsmith API for future evaluations. Providing a
+    // trait with a value of None will remove the trait from the identity if it exists.
+    // # Example
+    // ```
+    // use flagsmith_flag_engine::identities::Trait;
+    // use flagsmith::{Flagsmith, FlagsmithOptions};
+    // use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
+    // const ENVIRONMENT_KEY: &str = "YOUR_ENVIRONMENT_KEY";
+    // fn main(){
+    //     let flagsmith_options = FlagsmithOptions::default();
+    //     let traits = vec![Trait{trait_key:"random_key".to_string(), trait_value: FlagsmithValue{value:"10.1".to_string(), value_type:FlagsmithValueType::Float}},
+    //                       Trait{trait_key:"another_random_key".to_string(), trait_value: FlagsmithValue{value:"false".to_string(), value_type:FlagsmithValueType::Bool}},
+    //                       Trait{trait_key:"another_random_key".to_string(), trait_value: FlagsmithValue{value:"".to_string(), value_type:FlagsmithValueType::None}}
+    //     ];
+    //     let mut flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    //     let flags = flagsmith.get_identity_flags("user_identifier".to_string(), traits);
+    // }
+    //```
+    pub fn get_identity_flags(&self, identifier: String, traits: Vec<Trait>) {
     }
 }
 fn get_environment_from_api(

@@ -13,12 +13,13 @@ use std::{
 static ANALYTICS_ENDPOINT: &str = "analytics/flags/";
 static ANALYTICS_TIMER: u64 = 1;
 
-struct AnalyticsProcessor {
+#[derive(Clone, Debug)]
+pub struct AnalyticsProcessor {
     tx: Sender<u32>,
 }
 
 impl AnalyticsProcessor {
-    fn new(api_url: String, mut headers: HeaderMap, timeout: std::time::Duration) -> Self {
+    pub fn new(api_url: String, mut headers: HeaderMap, timeout: std::time::Duration) -> Self {
         let (tx, rx) = mpsc::channel::<u32>();
         headers.insert("Content-Type", "application/json".parse().unwrap());
         let client = reqwest::blocking::Client::builder()

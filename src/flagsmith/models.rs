@@ -102,7 +102,13 @@ impl Flags {
     }
     pub fn get_flag(&self, feature_name: String) -> Result<Flag, error::Error> {
         match self.flags.get(&feature_name) {
-            Some(flag) => Ok(flag.clone()),
+            Some(flag) => {
+                if self.analytics_processor.is_some() && !flag.is_default{
+                    self.analytics_processor.as_ref().unwrap().tx.send(flag.feature_id);
+                };
+                return Ok(flag.clone())
+
+            },
             None => match self.default_flag_handler {
                 Some(handler) => Ok(handler(feature_name)),
                 None => Err(error::Error::new(

@@ -15,7 +15,7 @@ static ANALYTICS_TIMER: u64 = 1;
 
 #[derive(Clone, Debug)]
 pub struct AnalyticsProcessor {
-    tx: Sender<u32>,
+    pub tx: Sender<u32>,
 }
 
 impl AnalyticsProcessor {

@@ -33,7 +33,7 @@ impl Flag {
 
     pub fn from_api_flag(flag_json: &serde_json::Value) -> Option<Flag> {
         let value: FlagsmithValue =
-            serde_json::from_value(flag_json["feature_state_value"]).ok()?;
+            serde_json::from_value(flag_json["feature_state_value"].clone()).ok()?;
         let flag = Flag {
             enabled: flag_json["enabled"].as_bool()?,
             is_default: false,
@@ -51,6 +51,7 @@ pub struct Flags {
     analytics_processor: Option<AnalyticsProcessor>,
     default_flag_handler: Option<fn(String) -> Flag>,
 }
+
 impl Flags {
     pub fn from_feature_states(
         feature_states: &Vec<FeatureState>,
@@ -79,7 +80,7 @@ impl Flags {
         let mut flags: HashMap<String, Flag> = HashMap::new();
         for flag_json in api_flags {
             let flag = Flag::from_api_flag(flag_json)?;
-            flags.insert(flag.feature_name, flag);
+            flags.insert(flag.feature_name.clone(), flag);
         }
         return Some(Flags {
             flags,
@@ -90,34 +91,25 @@ impl Flags {
 
     // Returns a vector of all flags values
     pub fn all_flags(&self) -> Vec<Flag> {
-        return self.flags.into_values().collect();
+        return self.flags.clone().into_values().collect();
     }
     pub fn is_feature_enabled(&self, feature_name: String) -> Result<bool, error::Error> {
         Ok(self.get_flag(feature_name)?.enabled)
     }
+    pub fn get_feature_state_value_as_string(&self, feature_name: String) -> Result<String, error::Error>{
+        let flag = self.get_flag(feature_name)?;
+        return Ok(flag.value.value)
+    }
     pub fn get_flag(&self, feature_name: String) -> Result<Flag, error::Error> {
         match self.flags.get(&feature_name) {
             Some(flag) => Ok(flag.clone()),
-            None => {
-                match self.default_flag_handler {
-                    Some(handler) => Ok(handler(feature_name)),
-                    None => Err(error::Error::new(
-                        error::ErrorKind::FlagsmithAPIError,
-                        "API returned invalid response".to_string(),
-                    )),
-                }
-
-                // if self.default_flag_handler.is_some(){
-                //     (Ok(self.default_flag_handler))(feature_name)
-                // }
-                //Err(error::Error::new(error::ErrorKind::FlagsmithAPIError,"API returned invalid response".to_string()))
-            }
+            None => match self.default_flag_handler {
+                Some(handler) => Ok(handler(feature_name)),
+                None => Err(error::Error::new(
+                    error::ErrorKind::FlagsmithAPIError,
+                    "API returned invalid response".to_string(),
+                )),
+            },
         }
-        // return flag
     }
-    // pub fn from_api_flags() -> Flags {}
-    // pub fn all_flags(&self) ->Vec<Flag>{}
-    // pub fn is_feature_enabled(&self, feature_name: &str)-> bool{}
-    // pub fn get_feature_value(&self, feature_name: &str) -> String {}
-    // pub fn get_flag(&self, feature_name: &str) -> Flag {}
 }

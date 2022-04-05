@@ -63,7 +63,7 @@ impl Flagsmith {
         );
         let timeout = Duration::from_secs(flagsmith_options.request_timeout_seconds);
         let client = reqwest::blocking::Client::builder()
-            .default_headers(headers)
+            .default_headers(headers.clone())
             .timeout(timeout)
             .build()
             .unwrap();
@@ -73,7 +73,7 @@ impl Flagsmith {
         let environment_url = format!("{}environment-document/", flagsmith_options.api_url);
         let analytics_processor = match flagsmith_options.enable_analytics {
             true => Some(AnalyticsProcessor::new(
-                flagsmith_options.api_url,
+                flagsmith_options.api_url.clone(),
                 headers,
                 timeout,
             )),
@@ -96,7 +96,7 @@ impl Flagsmith {
             thread::spawn(move || loop {
                 println!("updating environment From Thread");
                 let environment = Some(
-                    get_environment_from_api(client.clone(), environment_url.clone()).unwrap(),
+                    get_environment_from_api(&client, environment_url.clone()).unwrap(),
                 );
                 let mut data = ds.lock().unwrap();
                 data.environment = environment;
@@ -109,32 +109,24 @@ impl Flagsmith {
         println!("Updating environment from main thread");
         let mut data = self.datastore.lock().unwrap();
         data.environment = Some(get_environment_from_api(
-            self.client.clone(),
+            &self.client,
             self.environment_url.clone(),
         )?);
         return Ok(());
     }
-    pub fn get_environment_flags(&self) -> models::Flags {
+    pub fn get_environment_flags(&self) -> Result<models::Flags, error::Error> {
         let data = self.datastore.lock().unwrap();
-        // if data.environment.is_none(){
-        //     match get_environment_flags_from_api(self.client, method, url){
-        //         Ok(flags) => flags,
-        //         Err(error) => {
-        //             if self.
-        //         }
-        //     }
-        // }
-        let environment = data.environment.as_ref().unwrap();
-        //TODO: Add fetch from api
-        // if data.environment.is_some(){
-        // }
+        if data.environment.is_some(){
+            let environment = data.environment.as_ref().unwrap();
+            return Ok(self.get_environment_flags_from_document(environment));
+        }
+        return self.get_environment_flags_from_api();
 
-        return self.get_environment_flags_from_document(environment);
     }
     fn get_environment_flags_from_document(&self, environment: &Environment) -> models::Flags {
         return models::Flags::from_feature_states(
             &environment.feature_states,
-            self.analytics_processor,
+            self.analytics_processor.clone(),
             self.options.default_flag_handler,
             None,
         );
@@ -159,34 +151,35 @@ impl Flagsmith {
     //     let flags = flagsmith.get_identity_flags("user_identifier".to_string(), traits);
     // }
     //```
-    pub fn get_identity_flags(&self, identifier: String, traits: Vec<Trait>) -> models::Flags {}
+    // pub fn get_identity_flags(&self, identifier: String, traits: Vec<Trait>) ->  {}
+
+
     fn get_environment_flags_from_api(
-        &self,
-        method: reqwest::Method,
-        url: String,
+        &self
     ) -> Result<Flags, error::Error> {
-        let api_flags = get_json_response(self.client, method, url)?;
+        let method = reqwest::Method::GET;
+        let api_flags = get_json_response(&self.client, method, self.environment_flags_url.clone())?;
         // Cast to array of values
         let api_flags = api_flags.as_array().ok_or(error::Error::new(
             error::ErrorKind::FlagsmithAPIError,
-            "API returned invalid response".to_string(),
+            "Unable to get valid response from Flagsmith API.".to_string(),
         ))?;
 
         let flags = Flags::from_api_flags(
             api_flags,
-            self.analytics_processor,
+            self.analytics_processor.clone(),
             self.options.default_flag_handler,
         )
         .ok_or(error::Error::new(
             error::ErrorKind::FlagsmithAPIError,
-            "API returned invalid response".to_string(),
+            "Unable to get valid response from Flagsmith API.".to_string(),
         ))?;
         return Ok(flags);
     }
 }
 
 fn get_environment_from_api(
-    client: reqwest::blocking::Client,
+    client: &reqwest::blocking::Client,
     environment_url: String,
 ) -> Result<Environment, error::Error> {
     let method = reqwest::Method::GET;
@@ -196,7 +189,7 @@ fn get_environment_from_api(
 }
 
 fn get_json_response(
-    client: reqwest::blocking::Client,
+    client: &reqwest::blocking::Client,
     method: reqwest::Method,
     url: String,
 ) -> Result<serde_json::Value, error::Error> {

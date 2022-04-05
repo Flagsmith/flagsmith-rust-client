@@ -12,6 +12,9 @@ use std::{
 mod analytics;
 mod models;
 const DEFAULT_API_URL: &str = "https://api.flagsmith.com/api/v1/";
+use self::analytics::AnalyticsProcessor;
+use self::models::{Flag, Flags};
+
 use super::error;
 pub struct FlagsmithOptions {
     pub api_url: String,
@@ -20,7 +23,9 @@ pub struct FlagsmithOptions {
     pub enable_local_evaluation: bool,
     pub environment_refresh_interval_seconds: u64,
     pub enable_analytics: bool,
+    pub default_flag_handler: Option<fn(String) -> Flag>,
 }
+
 impl Default for FlagsmithOptions {
     fn default() -> Self {
         FlagsmithOptions {
@@ -30,6 +35,7 @@ impl Default for FlagsmithOptions {
             enable_local_evaluation: false,
             enable_analytics: false,
             environment_refresh_interval_seconds: 10,
+            default_flag_handler: None,
         }
     }
 }
@@ -40,14 +46,7 @@ pub struct Flagsmith {
     environment_url: String,
     options: FlagsmithOptions,
     datastore: Arc<Mutex<DataStore>>,
-    environment: Option<Environment>, //  environment_key: String,
-                                      // api_url: String,
-                                      //custom_headers: HashMap<String, String>,
-                                      //request_timeout_seconds: u8,
-                                      // enable_local_evaluation: bool,
-                                      //environment_refresh_interval_seconds: u32,
-                                      //retries: u8,
-                                      //enable_analytics: bool, //TODO: Add default flag handler
+    analytics_processor: Option<AnalyticsProcessor>,
 }
 struct DataStore {
     environment: Option<Environment>,
@@ -55,15 +54,9 @@ struct DataStore {
 impl Flagsmith {
     pub fn new(
         environment_key: String,
-        flagsmith_options: FlagsmithOptions, // api_url: Option<String>,
-                                             // custom_headers: Option<HeaderMap>,
-                                             // request_timeout_seconds: Option<u64>,
-                                             // enable_local_evaluation: Option<bool>,
-                                             // environment_refresh_interval_seconds: Option<u32>,
-                                             // retries: Option<u8>,
-                                             // enable_analytics: Option<bool>, // TODO: Add this default_flag_handler:
+        flagsmith_options: FlagsmithOptions,
     ) -> Flagsmith {
-        let mut headers = flagsmith_options.custom_headers.clone(); //custom_headers.unwrap_or(header::HeaderMap::new());
+        let mut headers = flagsmith_options.custom_headers.clone();
         headers.insert(
             "X-Environment-Key",
             header::HeaderValue::from_str(&environment_key).unwrap(),
@@ -78,17 +71,26 @@ impl Flagsmith {
         let environment_flags_url = format!("{}flags/", flagsmith_options.api_url);
         let identities_url = format!("{}identities/", flagsmith_options.api_url);
         let environment_url = format!("{}environment-document/", flagsmith_options.api_url);
+        let analytics_processor = match flagsmith_options.enable_analytics {
+            true => Some(AnalyticsProcessor::new(
+                flagsmith_options.api_url,
+                headers,
+                timeout,
+            )),
+            false => None,
+        };
         let ds = Arc::new(Mutex::new(DataStore { environment: None }));
         let flagsmith = Flagsmith {
             client: client.clone(),
             environment_flags_url,
             environment_url: environment_url.clone(),
-            identities_url: identities_url,
+            identities_url,
             options: flagsmith_options,
-            environment: None,
             datastore: Arc::clone(&ds),
+            analytics_processor,
         };
-        let environment_refresh_interval_seconds = flagsmith.options.environment_refresh_interval_seconds;
+        let environment_refresh_interval_seconds =
+            flagsmith.options.environment_refresh_interval_seconds;
         if flagsmith.options.enable_local_evaluation {
             let ds = Arc::clone(&ds);
             thread::spawn(move || loop {
@@ -114,6 +116,14 @@ impl Flagsmith {
     }
     pub fn get_environment_flags(&self) -> models::Flags {
         let data = self.datastore.lock().unwrap();
+        // if data.environment.is_none(){
+        //     match get_environment_flags_from_api(self.client, method, url){
+        //         Ok(flags) => flags,
+        //         Err(error) => {
+        //             if self.
+        //         }
+        //     }
+        // }
         let environment = data.environment.as_ref().unwrap();
         //TODO: Add fetch from api
         // if data.environment.is_some(){
@@ -122,7 +132,12 @@ impl Flagsmith {
         return self.get_environment_flags_from_document(environment);
     }
     fn get_environment_flags_from_document(&self, environment: &Environment) -> models::Flags {
-        return models::Flags::from_feature_states(&environment.feature_states, None);
+        return models::Flags::from_feature_states(
+            &environment.feature_states,
+            self.analytics_processor,
+            self.options.default_flag_handler,
+            None,
+        );
     }
     // Returns all the flags for the current environment for a given identity. Will also
     // upsert all traits to the Flagsmith API for future evaluations. Providing a
@@ -144,9 +159,32 @@ impl Flagsmith {
     //     let flags = flagsmith.get_identity_flags("user_identifier".to_string(), traits);
     // }
     //```
-    pub fn get_identity_flags(&self, identifier: String, traits: Vec<Trait>) -> models::Flags{
+    pub fn get_identity_flags(&self, identifier: String, traits: Vec<Trait>) -> models::Flags {}
+    fn get_environment_flags_from_api(
+        &self,
+        method: reqwest::Method,
+        url: String,
+    ) -> Result<Flags, error::Error> {
+        let api_flags = get_json_response(self.client, method, url)?;
+        // Cast to array of values
+        let api_flags = api_flags.as_array().ok_or(error::Error::new(
+            error::ErrorKind::FlagsmithAPIError,
+            "API returned invalid response".to_string(),
+        ))?;
+
+        let flags = Flags::from_api_flags(
+            api_flags,
+            self.analytics_processor,
+            self.options.default_flag_handler,
+        )
+        .ok_or(error::Error::new(
+            error::ErrorKind::FlagsmithAPIError,
+            "API returned invalid response".to_string(),
+        ))?;
+        return Ok(flags);
     }
 }
+
 fn get_environment_from_api(
     client: reqwest::blocking::Client,
     environment_url: String,
@@ -156,6 +194,7 @@ fn get_environment_from_api(
     let environment = build_environment_struct(json_document);
     return Ok(environment);
 }
+
 fn get_json_response(
     client: reqwest::blocking::Client,
     method: reqwest::Method,
@@ -165,6 +204,9 @@ fn get_json_response(
     if response.status().is_success() {
         return Ok(response.json()?);
     } else {
-        return Err(error::Error::from("Request returned non 2xx".to_string()));
+        return Err(error::Error::new(
+            error::ErrorKind::FlagsmithAPIError,
+            "Request returned non 2xx".to_string(),
+        ));
     }
 }

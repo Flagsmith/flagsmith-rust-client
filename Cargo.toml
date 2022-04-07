@@ -18,6 +18,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.11", features = ["json", "blocking"] }
 url = "2.1"
-flagsmith-flag-engine ={path="/home/gagan/Flag/flagsmith-rust-flag-engine"}
 chrono = { version = "0.4"}
 log = "0.4"
+# TODO: update flag_engine dependency once pushed to crates.io
+flagsmith-flag-engine = {git="https://github.com/Flagsmith/flagsmith-rust-flag-engine", branch="init/v1"}
+

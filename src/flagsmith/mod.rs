@@ -149,8 +149,9 @@ impl Flagsmith {
     //     let flags = flagsmith.get_identity_flags("user_identifier".to_string(), traits);
     // }
     //```
-    pub fn get_identity_flags(&self, identifier: String, traits: Vec<Trait>) -> Result<Flags, error::Error> {
+    pub fn get_identity_flags(&self, identifier: String, traits: Option<Vec<Trait>>) -> Result<Flags, error::Error> {
         let data = self.datastore.lock().unwrap();
+        let traits = traits.unwrap_or(vec![]);
         if data.environment.is_some(){
             let environment = data.environment.as_ref().unwrap();
             return  self.get_identity_flags_from_document(environment, identifier, traits);
@@ -183,9 +184,9 @@ impl Flagsmith {
         // let json_trait = serde_json::to_string(&traits)?;
 
         let json = json!({"identifier":identifier, "traits": traits});
-        let api_flags = get_json_response(&self.client, method, self.identities_url.clone(), Some(json.to_string()))?;
+        let response = get_json_response(&self.client, method, self.identities_url.clone(), Some(json.to_string()))?;
         // Cast to array of values
-        let api_flags = api_flags.as_array().ok_or(error::Error::new(
+        let api_flags = response["flags"].as_array().ok_or(error::Error::new(
             error::ErrorKind::FlagsmithAPIError,
             "Unable to get valid response from Flagsmith API.".to_string(),
         ))?;

@@ -1,0 +1,19 @@
+[package]
+name = "example"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[net]
+git-fetch-with-cli = true   # use the `git` executable for git operations
+
+[dependencies]
+rocket = "0.4.10"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+rocket_contrib = {version = "0.4.10", features=["tera_templates"]}
+flagsmith = {path="../"}
+# TODO: update flag_engine dependency once pushed to crates.io
+flagsmith-flag-engine = {git="https://github.com/Flagsmith/flagsmith-rust-flag-engine", branch="init/v1"}
+

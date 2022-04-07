@@ -1,7 +1,7 @@
 [package]
 name = "flagsmith"
-version = "1.0.0"
-authors = ["Tomasz Zdybał <tomek@zdybal.lap.pl>"]
+version = "0.1.0"
+authors = ["Gagan Trivedi <gagan.trivedi@flagsmith.com>"]
 edition = "2021"
 license = "BSD-3-Clause"
 description = "Flagsmith SDK for Rust"

@@ -45,18 +45,18 @@ impl Flag {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Flags {
     flags: HashMap<String, Flag>,
     analytics_processor: Option<AnalyticsProcessor>,
-    default_flag_handler: Option<fn(String) -> Flag>,
+    default_flag_handler: Option<fn(&str) -> Flag>,
 }
 
 impl Flags {
     pub fn from_feature_states(
         feature_states: &Vec<FeatureState>,
         analytics_processor: Option<AnalyticsProcessor>,
-        default_flag_handler: Option<fn(String) -> Flag>,
+        default_flag_handler: Option<fn(&str) -> Flag>,
         identity_id: Option<&str>,
     ) -> Flags {
         let mut flags: HashMap<String, Flag> = HashMap::new();
@@ -75,7 +75,7 @@ impl Flags {
     pub fn from_api_flags(
         api_flags: &Vec<serde_json::Value>,
         analytics_processor: Option<AnalyticsProcessor>,
-        default_flag_handler: Option<fn(String) -> Flag>,
+        default_flag_handler: Option<fn(&str) -> Flag>,
     ) -> Option<Flags> {
         let mut flags: HashMap<String, Flag> = HashMap::new();
         for flag_json in api_flags {
@@ -93,15 +93,15 @@ impl Flags {
     pub fn all_flags(&self) -> Vec<Flag> {
         return self.flags.clone().into_values().collect();
     }
-    pub fn is_feature_enabled(&self, feature_name: String) -> Result<bool, error::Error> {
+    pub fn is_feature_enabled(&self, feature_name: &str) -> Result<bool, error::Error> {
         Ok(self.get_flag(feature_name)?.enabled)
     }
-    pub fn get_feature_state_value_as_string(&self, feature_name: String) -> Result<String, error::Error>{
+    pub fn get_feature_value_as_string(&self, feature_name: &str) -> Result<String, error::Error>{
         let flag = self.get_flag(feature_name)?;
         return Ok(flag.value.value)
     }
-    pub fn get_flag(&self, feature_name: String) -> Result<Flag, error::Error> {
-        match self.flags.get(&feature_name) {
+    pub fn get_flag(&self, feature_name: &str) -> Result<Flag, error::Error> {
+        match self.flags.get(&feature_name.to_string()) {
             Some(flag) => {
                 if self.analytics_processor.is_some() && !flag.is_default{
                     self.analytics_processor.as_ref().unwrap().tx.send(flag.feature_id);

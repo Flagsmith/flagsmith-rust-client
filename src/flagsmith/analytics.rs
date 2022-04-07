@@ -10,7 +10,6 @@ use std::{
     thread,
 };
 
-static ANALYTICS_ENDPOINT: &str = "analytics/flags/";
 static ANALYTICS_TIMER: u64 = 1;
 
 #[derive(Clone, Debug)]
@@ -21,7 +20,6 @@ pub struct AnalyticsProcessor {
 impl AnalyticsProcessor {
     pub fn new(api_url: String, mut headers: HeaderMap, timeout: std::time::Duration) -> Self {
         let (tx, rx) = mpsc::channel::<u32>();
-        headers.insert("Content-Type", "application/json".parse().unwrap());
         let client = reqwest::blocking::Client::builder()
             .default_headers(headers)
             .timeout(timeout)

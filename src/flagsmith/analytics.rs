@@ -1,6 +1,6 @@
 use super::FlagsmithOptions;
 use chrono::{serde, DateTime, Duration, Utc};
-use log::{info, trace, warn};
+use log::{info, trace, warn, debug};
 use reqwest::header::{self, HeaderMap};
 use serde_json;
 use std::sync::mpsc;
@@ -32,6 +32,11 @@ impl AnalyticsProcessor {
                 let mut last_flushed = chrono::Utc::now();
                 let analytics_data: &mut HashMap<u32, u32> = &mut HashMap::new();
                 loop {
+                    let data =rx.recv();
+                    if data.is_err(){
+                        debug!("Shutting down analytics thread ");
+                        break;
+                    }
                     analytics_data
                         .entry(rx.recv().unwrap())
                         .and_modify(|e| *e += 1)

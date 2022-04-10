@@ -2,6 +2,7 @@ use flagsmith_flag_engine::engine;
 use flagsmith_flag_engine::environments::builders::build_environment_struct;
 use flagsmith_flag_engine::environments::Environment;
 use flagsmith_flag_engine::identities::{Identity, Trait};
+use log::debug;
 use reqwest::header::{self, HeaderMap};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -12,10 +13,11 @@ use std::{
     time::Duration,
 };
 mod analytics;
-mod models;
+pub mod models;
 const DEFAULT_API_URL: &str = "https://api.flagsmith.com/api/v1/";
 use self::analytics::AnalyticsProcessor;
 use self::models::{Flag, Flags};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 
 use super::error;
 pub struct FlagsmithOptions {
@@ -49,6 +51,7 @@ pub struct Flagsmith {
     options: FlagsmithOptions,
     datastore: Arc<Mutex<DataStore>>,
     analytics_processor: Option<AnalyticsProcessor>,
+    polling_thead_tx: Sender<u32>, // used for shutting down polling manager
 }
 struct DataStore {
     environment: Option<Environment>,
@@ -71,6 +74,7 @@ impl Flagsmith {
         let environment_flags_url = format!("{}flags/", flagsmith_options.api_url);
         let identities_url = format!("{}identities/", flagsmith_options.api_url);
         let environment_url = format!("{}environment-document/", flagsmith_options.api_url);
+        // Initialize analytics processor
         let analytics_processor = match flagsmith_options.enable_analytics {
             true => Some(AnalyticsProcessor::new(
                 flagsmith_options.api_url.clone(),
@@ -79,7 +83,10 @@ impl Flagsmith {
             )),
             false => None,
         };
+        // Put the environment model behind mutex to
+        // to share it safely between threads
         let ds = Arc::new(Mutex::new(DataStore { environment: None }));
+        let (tx, rx) = mpsc::channel::<u32>();
         let flagsmith = Flagsmith {
             client: client.clone(),
             environment_flags_url,
@@ -88,13 +95,23 @@ impl Flagsmith {
             options: flagsmith_options,
             datastore: Arc::clone(&ds),
             analytics_processor,
+            polling_thead_tx:tx
         };
+
+        // Create a thread to update environment document
+        // If enabled
         let environment_refresh_interval_seconds =
             flagsmith.options.environment_refresh_interval_seconds;
         if flagsmith.options.enable_local_evaluation {
             let ds = Arc::clone(&ds);
             thread::spawn(move || loop {
-                println!("updating environment From Thread");
+                match rx.try_recv() {
+                    Ok(_) | Err(TryRecvError::Disconnected) => {
+                        debug!("shutting down polling manager");
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => {}
+                }
                 let environment =
                     Some(get_environment_from_api(&client, environment_url.clone()).unwrap());
                 let mut data = ds.lock().unwrap();
@@ -161,12 +178,6 @@ impl Flagsmith {
     }
 
     fn get_identity_flags_from_document(&self,  environment: &Environment, identifier: String, traits: Vec<Trait>) -> Result<Flags, error::Error>{
-        // if data.environment.is_none() {
-        //     return Err(error::Error::new(
-        //         error::ErrorKind::FlagsmithClientError,
-        //         "Unable to build identity model when no local environment present.".to_string(),
-        //     ));
-        // };
         let identity = self.build_identity_model(environment,identifier, traits.clone())?;
         let feature_states = engine::get_identity_feature_states(environment, &identity, Some(traits.as_ref()));
         let flags = Flags::from_feature_states(&feature_states, self.analytics_processor.clone(), self.options.default_flag_handler, Some(&identity.composite_key()));
@@ -181,7 +192,6 @@ impl Flagsmith {
     }
     fn get_identity_flags_from_api(&self, identifier: String, traits: Vec<Trait>) -> Result<Flags, error::Error>{
         let method = reqwest::Method::POST;
-        // let json_trait = serde_json::to_string(&traits)?;
 
         let json = json!({"identifier":identifier, "traits": traits});
         let response = get_json_response(&self.client, method, self.identities_url.clone(), Some(json.to_string()))?;

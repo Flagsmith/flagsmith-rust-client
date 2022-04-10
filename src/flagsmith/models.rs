@@ -5,19 +5,13 @@ use std::collections::HashMap;
 
 use crate::error;
 
-pub struct DefaultFlag {
-    enabled: bool,
-    value: String,
-    is_default: bool,
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Flag {
-    enabled: bool,
-    value: FlagsmithValue,
-    is_default: bool,
-    feature_id: u32,
-    feature_name: String,
+    pub enabled: bool,
+    pub value: FlagsmithValue,
+    pub is_default: bool,
+    pub feature_id: u32,
+    pub feature_name: String,
 }
 
 impl Flag {

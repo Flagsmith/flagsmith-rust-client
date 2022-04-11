@@ -1,12 +1,10 @@
-use super::FlagsmithOptions;
-use chrono::{serde, DateTime, Duration, Utc};
-use log::{info, trace, warn, debug};
-use reqwest::header::{self, HeaderMap};
+use log::{warn, debug};
+use reqwest::header::HeaderMap;
 use serde_json;
 use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc:: Sender;
 use std::{
-    collections::{hash_map, HashMap},
+    collections::HashMap,
     thread,
 };
 
@@ -18,7 +16,7 @@ pub struct AnalyticsProcessor {
 }
 
 impl AnalyticsProcessor {
-    pub fn new(api_url: String, mut headers: HeaderMap, timeout: std::time::Duration) -> Self {
+    pub fn new(api_url: String, headers: HeaderMap, timeout: std::time::Duration) -> Self {
         let (tx, rx) = mpsc::channel::<u32>();
         let client = reqwest::blocking::Client::builder()
             .default_headers(headers)
@@ -32,13 +30,13 @@ impl AnalyticsProcessor {
                 let mut last_flushed = chrono::Utc::now();
                 let analytics_data: &mut HashMap<u32, u32> = &mut HashMap::new();
                 loop {
-                    let data =rx.recv();
+                    let data = rx.recv();
                     if data.is_err(){
                         debug!("Shutting down analytics thread ");
                         break;
                     }
                     analytics_data
-                        .entry(rx.recv().unwrap())
+                        .entry(data.unwrap())
                         .and_modify(|e| *e += 1)
                         .or_insert(1);
                     if (chrono::Utc::now() - last_flushed).num_seconds() > ANALYTICS_TIMER as i64 {
@@ -47,7 +45,7 @@ impl AnalyticsProcessor {
                     }
                     thread::sleep(std::time::Duration::from_secs(ANALYTICS_TIMER));
                 }
-            });
+            }).expect("Failed to start analytics thread");
 
         return AnalyticsProcessor { tx };
     }

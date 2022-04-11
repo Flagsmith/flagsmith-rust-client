@@ -98,7 +98,7 @@ impl Flags {
         match self.flags.get(&feature_name.to_string()) {
             Some(flag) => {
                 if self.analytics_processor.is_some() && !flag.is_default{
-                    self.analytics_processor.as_ref().unwrap().tx.send(flag.feature_id);
+                    let _ = self.analytics_processor.as_ref().unwrap().tx.send(flag.feature_id);
                 };
                 return Ok(flag.clone())
 

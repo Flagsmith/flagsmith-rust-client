@@ -7,9 +7,7 @@ use reqwest::header::{self, HeaderMap};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use std::{
-    collections::HashMap,
-    fmt::{self, format},
-    string, thread,
+     thread,
     time::Duration,
 };
 mod analytics;
@@ -17,7 +15,7 @@ pub mod models;
 const DEFAULT_API_URL: &str = "https://api.flagsmith.com/api/v1/";
 use self::analytics::AnalyticsProcessor;
 use self::models::{Flag, Flags};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self,  Sender, TryRecvError};
 
 use super::error;
 pub struct FlagsmithOptions {
@@ -51,7 +49,7 @@ pub struct Flagsmith {
     options: FlagsmithOptions,
     datastore: Arc<Mutex<DataStore>>,
     analytics_processor: Option<AnalyticsProcessor>,
-    polling_thead_tx: Sender<u32>, // used for shutting down polling manager
+    _polling_thead_tx: Sender<u32>, // used for shutting down polling manager
 }
 struct DataStore {
     environment: Option<Environment>,
@@ -95,7 +93,7 @@ impl Flagsmith {
             options: flagsmith_options,
             datastore: Arc::clone(&ds),
             analytics_processor,
-            polling_thead_tx:tx
+            _polling_thead_tx:tx
         };
 
         // Create a thread to update environment document

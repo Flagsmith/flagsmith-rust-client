@@ -44,7 +44,7 @@ fn home(
         ..Default::default()
     };
 
-    let flagsmith = Flagsmith::new(env::var("ENVIRONMENT_KEY").unwrap(), options);
+    let flagsmith = Flagsmith::new(env::var("FLAGSMITH_ENVIRONMENT_KEY").expect("FLAGSMITH_ENVIRONMENT_KEY not found in environment"), options);
     let flags;
     if identifier.is_some() {
         let traits = match trait_key {

@@ -28,6 +28,7 @@ impl Flag {
     pub fn from_api_flag(flag_json: &serde_json::Value) -> Option<Flag> {
         let value: FlagsmithValue =
             serde_json::from_value(flag_json["feature_state_value"].clone()).ok()?;
+
         let flag = Flag {
             enabled: flag_json["enabled"].as_bool()?,
             is_default: false,
@@ -96,21 +97,25 @@ impl Flags {
 
     // Returns the string value of a given feature
     // Or error if the feature is not found
-    pub fn get_feature_value_as_string(&self, feature_name: &str) -> Result<String, error::Error>{
+    pub fn get_feature_value_as_string(&self, feature_name: &str) -> Result<String, error::Error> {
         let flag = self.get_flag(feature_name)?;
-        return Ok(flag.value.value)
+        return Ok(flag.value.value);
     }
 
     // Returns a specific `Flag` given the feature name
     pub fn get_flag(&self, feature_name: &str) -> Result<Flag, error::Error> {
         match self.flags.get(&feature_name.to_string()) {
             Some(flag) => {
-                if self.analytics_processor.is_some() && !flag.is_default{
-                    let _ = self.analytics_processor.as_ref().unwrap().tx.send(flag.feature_id);
+                if self.analytics_processor.is_some() && !flag.is_default {
+                    let _ = self
+                        .analytics_processor
+                        .as_ref()
+                        .unwrap()
+                        .tx
+                        .send(flag.feature_id);
                 };
-                return Ok(flag.clone())
-
-            },
+                return Ok(flag.clone());
+            }
             None => match self.default_flag_handler {
                 Some(handler) => Ok(handler(feature_name)),
                 None => Err(error::Error::new(
@@ -119,5 +124,65 @@ impl Flags {
                 )),
             },
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    static FEATURE_STATE_JSON_STRING: &str = r#"{
+            "multivariate_feature_state_values": [
+        {
+            "id": 3404,
+            "multivariate_feature_option": {
+              "value": "baz"
+            },
+            "percentage_allocation": 30
+          }
+            ],
+            "feature_state_value": 1,
+            "django_id": 1,
+            "feature": {
+                "name": "feature1",
+                "type": null,
+                "id": 1
+            },
+            "segment_id": null,
+            "enabled": false
+        }"#;
+
+
+    #[test]
+    fn can_create_flag_from_feature_state() {
+        // Given
+        let feature_state: FeatureState =
+            serde_json::from_str(FEATURE_STATE_JSON_STRING.clone()).unwrap();
+        // When
+        let flag = Flag::from_feature_state(feature_state.clone(), None);
+        // Then
+        assert_eq!(flag.feature_name, feature_state.feature.name);
+        assert_eq!(flag.is_default, false);
+        assert_eq!(flag.enabled, feature_state.enabled);
+        assert_eq!(flag.value, feature_state.get_value(None));
+        assert_eq!(flag.feature_id, feature_state.feature.id);
+
+    }
+
+    #[test]
+    fn can_create_flag_from_from_api_flag() {
+        // Give
+        let feature_state_json: serde_json::Value = serde_json::from_str(FEATURE_STATE_JSON_STRING).unwrap();
+        let expected_value: FlagsmithValue =
+            serde_json::from_value(feature_state_json["feature_state_value"].clone()).unwrap();
+
+        // When
+        let flag = Flag::from_api_flag(&feature_state_json).unwrap();
+
+        // Then
+        assert_eq!(flag.feature_name, feature_state_json["feature"]["name"].as_str().unwrap());
+        assert_eq!(flag.feature_id, feature_state_json["feature"]["id"].as_u64().unwrap() as u32);
+        assert_eq!(flag.is_default, false);
+        assert_eq!(flag.enabled, feature_state_json["enabled"].as_bool().unwrap());
+        assert_eq!(flag.value, expected_value);
+
     }
 }

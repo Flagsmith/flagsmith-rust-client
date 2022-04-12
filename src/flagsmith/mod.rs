@@ -78,6 +78,7 @@ impl Flagsmith {
                 flagsmith_options.api_url.clone(),
                 headers,
                 timeout,
+                None
             )),
             false => None,
         };
@@ -119,15 +120,7 @@ impl Flagsmith {
         }
         return flagsmith;
     }
-    pub fn update_environment(&mut self) -> Result<(), error::Error> {
-        println!("Updating environment from main thread");
-        let mut data = self.datastore.lock().unwrap();
-        data.environment = Some(get_environment_from_api(
-            &self.client,
-            self.environment_url.clone(),
-        )?);
-        return Ok(());
-    }
+    //Returns `Flags` struct holding all the flags for the current environment.
     pub fn get_environment_flags(&self) -> Result<models::Flags, error::Error> {
         let data = self.datastore.lock().unwrap();
         if data.environment.is_some() {
@@ -136,14 +129,7 @@ impl Flagsmith {
         }
         return self.get_environment_flags_from_api();
     }
-    fn get_environment_flags_from_document(&self, environment: &Environment) -> models::Flags {
-        return models::Flags::from_feature_states(
-            &environment.feature_states,
-            self.analytics_processor.clone(),
-            self.options.default_flag_handler,
-            None,
-        );
-    }
+
     // Returns all the flags for the current environment for a given identity. Will also
     // upsert all traits to the Flagsmith API for future evaluations. Providing a
     // trait with a value of None will remove the trait from the identity if it exists.
@@ -173,6 +159,22 @@ impl Flagsmith {
         }
         return self.get_identity_flags_from_api(identifier, traits);
 
+    }
+    fn get_environment_flags_from_document(&self, environment: &Environment) -> models::Flags {
+        return models::Flags::from_feature_states(
+            &environment.feature_states,
+            self.analytics_processor.clone(),
+            self.options.default_flag_handler,
+            None,
+        );
+    }
+    pub fn update_environment(&mut self) -> Result<(), error::Error> {
+        let mut data = self.datastore.lock().unwrap();
+        data.environment = Some(get_environment_from_api(
+            &self.client,
+            self.environment_url.clone(),
+        )?);
+        return Ok(());
     }
 
     fn get_identity_flags_from_document(&self,  environment: &Environment, identifier: String, traits: Vec<Trait>) -> Result<Flags, error::Error>{
@@ -260,11 +262,9 @@ fn get_json_response(
     if response.status().is_success() {
         return Ok(response.json()?);
     } else {
-        println!("Message from the top ");
         return Err(error::Error::new(
             error::ErrorKind::FlagsmithAPIError,
             response.text()?
-            //"Request returned non 2xx".to_string(),
         ));
     }
 }

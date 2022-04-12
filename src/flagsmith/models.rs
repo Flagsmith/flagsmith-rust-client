@@ -83,17 +83,25 @@ impl Flags {
         });
     }
 
-    // Returns a vector of all flags values
+    // Returns a vector of all `Flag` structs
     pub fn all_flags(&self) -> Vec<Flag> {
         return self.flags.clone().into_values().collect();
     }
+
+    // Check whether a given feature is enabled.
+    // Returns error:Error if the feature is not found
     pub fn is_feature_enabled(&self, feature_name: &str) -> Result<bool, error::Error> {
         Ok(self.get_flag(feature_name)?.enabled)
     }
+
+    // Returns the string value of a given feature
+    // Or error if the feature is not found
     pub fn get_feature_value_as_string(&self, feature_name: &str) -> Result<String, error::Error>{
         let flag = self.get_flag(feature_name)?;
         return Ok(flag.value.value)
     }
+
+    // Returns a specific `Flag` given the feature name
     pub fn get_flag(&self, feature_name: &str) -> Result<Flag, error::Error> {
         match self.flags.get(&feature_name.to_string()) {
             Some(flag) => {

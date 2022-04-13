@@ -150,7 +150,7 @@ impl Flagsmith {
     //     let flags = flagsmith.get_identity_flags("user_identifier".to_string(), traits);
     // }
     //```
-    pub fn get_identity_flags(&self, identifier: String, traits: Option<Vec<Trait>>) -> Result<Flags, error::Error> {
+    pub fn get_identity_flags(&self, identifier: &str, traits: Option<Vec<Trait>>) -> Result<Flags, error::Error> {
         let data = self.datastore.lock().unwrap();
         let traits = traits.unwrap_or(vec![]);
         if data.environment.is_some(){
@@ -177,7 +177,7 @@ impl Flagsmith {
         return Ok(());
     }
 
-    fn get_identity_flags_from_document(&self,  environment: &Environment, identifier: String, traits: Vec<Trait>) -> Result<Flags, error::Error>{
+    fn get_identity_flags_from_document(&self,  environment: &Environment, identifier: &str, traits: Vec<Trait>) -> Result<Flags, error::Error>{
         let identity = self.build_identity_model(environment,identifier, traits.clone())?;
         let feature_states = engine::get_identity_feature_states(environment, &identity, Some(traits.as_ref()));
         let flags = Flags::from_feature_states(&feature_states, self.analytics_processor.clone(), self.options.default_flag_handler, Some(&identity.composite_key()));
@@ -185,12 +185,12 @@ impl Flagsmith {
 
     }
 
-    fn build_identity_model(&self,environment: &Environment, identifier: String, traits: Vec<Trait>) -> Result<Identity, error::Error> {
-        let mut identity = Identity::new(identifier, environment.api_key.clone());
+    fn build_identity_model(&self,environment: &Environment, identifier: &str, traits: Vec<Trait>) -> Result<Identity, error::Error> {
+        let mut identity = Identity::new(identifier.to_string(), environment.api_key.clone());
         identity.identity_traits = traits;
         Ok(identity)
     }
-    fn get_identity_flags_from_api(&self, identifier: String, traits: Vec<Trait>) -> Result<Flags, error::Error>{
+    fn get_identity_flags_from_api(&self, identifier: &str, traits: Vec<Trait>) -> Result<Flags, error::Error>{
         let method = reqwest::Method::POST;
 
         let json = json!({"identifier":identifier, "traits": traits});

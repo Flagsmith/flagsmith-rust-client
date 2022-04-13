@@ -23,3 +23,6 @@ log = "0.4"
 # TODO: update flag_engine dependency once pushed to crates.io
 flagsmith-flag-engine = {git="https://github.com/Flagsmith/flagsmith-rust-flag-engine", branch="init/v1"}
 
+[dev-dependencies]
+httpmock = "0.6"
+rstest = "0.12.0"

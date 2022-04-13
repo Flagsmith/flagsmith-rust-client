@@ -1,6 +1,6 @@
 use crate::flagsmith::analytics::AnalyticsProcessor;
 use flagsmith_flag_engine::features::FeatureState;
-use flagsmith_flag_engine::types::FlagsmithValue;
+use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
 use std::collections::HashMap;
 
 use crate::error;
@@ -37,6 +37,12 @@ impl Flag {
             value,
         };
         Some(flag)
+    }
+    pub fn value_as_string(&self) -> Option<String>{
+        match self.value.value_type {
+            FlagsmithValueType::String => Some(self.value.value.clone()),
+            _ => None
+        }
     }
 }
 
@@ -126,6 +132,7 @@ impl Flags {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

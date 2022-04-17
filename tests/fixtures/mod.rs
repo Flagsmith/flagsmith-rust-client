@@ -3,6 +3,7 @@ use serde_json;
 pub static FEATURE_1_NAME: &str = "feature_1";
 pub static FEATURE_1_ID: u32 = 1;
 pub static FEATURE_1_STR_VALUE: &str = "some_value";
+pub static DEFAULT_FLAG_HANDLER_FLAG_VALUE: &str = "default_flag_handler_flag_value";
 
 #[fixture]
 pub fn environment_json() -> serde_json::Value {
@@ -100,4 +101,17 @@ pub fn identities_json() -> serde_json::Value {
             ]
 }
     )
+}
+
+#[fixture]
+pub fn default_flag_handler() -> fn (&str) -> flagsmith::Flag{
+    fn handler(_feature_name: &str) -> flagsmith::Flag{
+        let mut default_flag = flagsmith::Flag::default();
+        default_flag.enabled=true;
+        default_flag.is_default=true;
+        default_flag.value.value_type=flagsmith_flag_engine::types::FlagsmithValueType::String;
+        default_flag.value.value = DEFAULT_FLAG_HANDLER_FLAG_VALUE.to_string();
+        return default_flag
+    }
+    return handler
 }

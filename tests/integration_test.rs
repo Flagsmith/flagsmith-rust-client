@@ -1,6 +1,6 @@
 use flagsmith_flag_engine::identities::Trait;
 use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
-
+//use flagsmith_flag_engine::Flag;
 use flagsmith::{Flagsmith, FlagsmithOptions};
 
 const ENVIRONMENT_KEY: &str = "ser.test_environment_key";
@@ -9,8 +9,10 @@ mod fixtures;
 use fixtures::environment_json;
 use fixtures::flags_json;
 use fixtures::identities_json;
+use fixtures::default_flag_handler;
 use httpmock::prelude::*;
 use rstest::*;
+
 
 #[fixture]
 fn mock_server() -> MockServer {
@@ -217,3 +219,243 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_with_traits(
 
     api_mock.assert();
 }
+
+#[rstest]
+fn test_default_flag_is_not_used_when_environment_flags_returned(
+    mock_server: MockServer,
+    flags_json: serde_json::Value,
+    default_flag_handler: fn (&str) -> flagsmith::Flag
+) {
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/flags/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(200).json_body(flags_json);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        default_flag_handler: Some(default_flag_handler),
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let flags = flagsmith.get_environment_flags().unwrap();
+    let flag = flags.get_flag(fixtures::FEATURE_1_NAME).unwrap();
+    // Then
+    assert_eq!(flag.feature_name, fixtures::FEATURE_1_NAME);
+    assert_eq!(flag.is_default, false);
+    assert_eq!(flag.feature_id, fixtures::FEATURE_1_ID);
+    assert_eq!(
+        flag.value_as_string().unwrap(),
+        fixtures::FEATURE_1_STR_VALUE
+    );
+    assert!(
+        flag.value_as_string().unwrap() !=
+        fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
+    );
+    api_mock.assert();
+}
+
+#[rstest]
+fn test_default_flag_is_used_when_no_matching_environment_flag_returned(
+    mock_server: MockServer,
+    flags_json: serde_json::Value,
+    default_flag_handler: fn (&str) -> flagsmith::Flag
+) {
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/flags/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(200).json_body(flags_json);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        default_flag_handler: Some(default_flag_handler),
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let flags = flagsmith.get_environment_flags().unwrap();
+    let flag = flags.get_flag("feature_that_does_not_exists").unwrap();
+    // Then
+    assert_eq!(flag.is_default, true);
+    assert!(
+        flag.value_as_string().unwrap() !=
+        fixtures::FEATURE_1_STR_VALUE
+    );
+    assert_eq!(
+        flag.value_as_string().unwrap(),
+        fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
+    );
+    api_mock.assert();
+}
+
+#[rstest]
+fn test_default_flag_is_not_used_when_identity_flags_returned(
+    mock_server: MockServer,
+    identities_json: serde_json::Value,
+    default_flag_handler: fn (&str) -> flagsmith::Flag
+) {
+    // Given
+    let identifier = "test_identity";
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/identities/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY)
+            .json_body(serde_json::json!({
+                "identifier": identifier,
+                "traits": []
+            }));
+        then.status(200).json_body(identities_json);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        default_flag_handler: Some(default_flag_handler),
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let flags = flagsmith.get_identity_flags(identifier, None).unwrap();
+    let flag = flags.get_flag(fixtures::FEATURE_1_NAME).unwrap();
+    // Then
+    assert_eq!(flag.feature_name, fixtures::FEATURE_1_NAME);
+    assert_eq!(flag.is_default, false);
+    assert_eq!(flag.feature_id, fixtures::FEATURE_1_ID);
+    assert_eq!(
+        flag.value_as_string().unwrap(),
+        fixtures::FEATURE_1_STR_VALUE
+    );
+    assert!(
+        flag.value_as_string().unwrap() !=
+            fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
+    );
+    api_mock.assert();
+
+}
+
+#[rstest]
+fn test_default_flag_is_used_when_no_matching_identity_flags_returned(
+    mock_server: MockServer,
+    identities_json: serde_json::Value,
+    default_flag_handler: fn (&str) -> flagsmith::Flag
+) {
+    // Given
+    let identifier = "test_identity";
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/identities/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY)
+            .json_body(serde_json::json!({
+                "identifier": identifier,
+                "traits": []
+            }));
+        then.status(200).json_body(identities_json);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        default_flag_handler: Some(default_flag_handler),
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let flags = flagsmith.get_identity_flags(identifier, None).unwrap();
+    let flag = flags.get_flag("feature_that_does_not_exists").unwrap();
+    // Then
+    assert_eq!(flag.is_default, true);
+    assert!(
+        flag.value_as_string().unwrap() !=
+            fixtures::FEATURE_1_STR_VALUE
+    );
+    assert_eq!(
+        flag.value_as_string().unwrap(),
+        fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
+    );
+    api_mock.assert();
+}
+
+
+#[rstest]
+fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_environment(
+    mock_server: MockServer,
+    default_flag_handler: fn (&str) -> flagsmith::Flag
+) {
+    // Give
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/flags/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(200).json_body({}); // returning empty body will return api error
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        default_flag_handler: Some(default_flag_handler),
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let flags = flagsmith.get_environment_flags().unwrap();
+    let flag = flags.get_flag(fixtures::FEATURE_1_NAME).unwrap();
+    // Then
+    assert_eq!(flag.is_default, true);
+    assert!(
+        flag.value_as_string().unwrap() !=
+        fixtures::FEATURE_1_STR_VALUE
+    );
+    assert_eq!(
+        flag.value_as_string().unwrap(),
+        fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
+    );
+    api_mock.assert();
+}
+
+#[rstest]
+fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_identity(
+    mock_server: MockServer,
+    default_flag_handler: fn (&str) -> flagsmith::Flag
+) {
+    // Given
+    let identifier = "test_identity";
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/identities/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY)
+            .json_body(serde_json::json!({
+                "identifier": identifier,
+                "traits": []
+            }));
+        then.status(200).json_body({});
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        default_flag_handler: Some(default_flag_handler),
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let flags = flagsmith.get_identity_flags(identifier, None).unwrap();
+    let flag = flags.get_flag("feature_that_does_not_exists").unwrap();
+    // Then
+    assert_eq!(flag.is_default, true);
+    assert!(
+        flag.value_as_string().unwrap() !=
+            fixtures::FEATURE_1_STR_VALUE
+    );
+    assert_eq!(
+        flag.value_as_string().unwrap(),
+        fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
+    );
+    api_mock.assert();
+}
+

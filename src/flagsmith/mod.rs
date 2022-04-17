@@ -23,7 +23,7 @@ pub struct FlagsmithOptions {
     pub custom_headers: HeaderMap,
     pub request_timeout_seconds: u64,
     pub enable_local_evaluation: bool,
-    pub environment_refresh_interval_seconds: u64,
+    pub environment_refresh_interval_mills: u64,
     pub enable_analytics: bool,
     pub default_flag_handler: Option<fn(&str) -> Flag>,
 }
@@ -36,11 +36,12 @@ impl Default for FlagsmithOptions {
             request_timeout_seconds: 60,
             enable_local_evaluation: false,
             enable_analytics: false,
-            environment_refresh_interval_seconds: 10,
+            environment_refresh_interval_mills: 10*1000,
             default_flag_handler: None,
         }
     }
 }
+
 pub struct Flagsmith {
     client: reqwest::blocking::Client,
     environment_flags_url: String,
@@ -51,9 +52,11 @@ pub struct Flagsmith {
     analytics_processor: Option<AnalyticsProcessor>,
     _polling_thead_tx: Sender<u32>, // used for shutting down polling manager
 }
+
 struct DataStore {
     environment: Option<Environment>,
 }
+
 impl Flagsmith {
     pub fn new(environment_key: String, flagsmith_options: FlagsmithOptions) -> Self{
         let mut headers = flagsmith_options.custom_headers.clone();
@@ -99,8 +102,8 @@ impl Flagsmith {
 
         // Create a thread to update environment document
         // If enabled
-        let environment_refresh_interval_seconds =
-            flagsmith.options.environment_refresh_interval_seconds;
+        let environment_refresh_interval_mills =
+            flagsmith.options.environment_refresh_interval_mills;
         if flagsmith.options.enable_local_evaluation {
             let ds = Arc::clone(&ds);
             thread::spawn(move || loop {
@@ -111,11 +114,13 @@ impl Flagsmith {
                     }
                     Err(TryRecvError::Empty) => {}
                 }
+
                 let environment =
-                    Some(get_environment_from_api(&client, environment_url.clone()).unwrap());
+                    Some(get_environment_from_api(&client, environment_url.clone()).expect("updating environment document failed"));
                 let mut data = ds.lock().unwrap();
                 data.environment = environment;
-                thread::sleep(Duration::from_secs(environment_refresh_interval_seconds));
+                thread::sleep(Duration::from_millis(environment_refresh_interval_mills));
+
             });
         }
         return flagsmith;
@@ -267,4 +272,93 @@ fn get_json_response(
             response.text()?
         ));
     }
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use httpmock::prelude::*;
+
+    static ENVIRONMENT_JSON: &str = r#"{
+            "api_key": "B62qaMZNwfiqT76p38ggrQ",
+            "project": {
+                "name": "Test project",
+                "organisation": {
+                    "feature_analytics": false,
+                    "name": "Test Org",
+                    "id": 1,
+                    "persist_trait_data": true,
+                    "stop_serving_flags": false
+                },
+                "id": 1,
+                "hide_disabled_flags": false,
+                "segments": []
+            },
+            "segment_overrides": [],
+            "id": 1,
+            "feature_states": []
+    }"#;
+
+    #[test]
+    fn polling_thread_updates_environment_on_start(){
+        // Given
+        let environment_key = "ser.test_environment_key";
+        let response_body: serde_json::Value = serde_json::from_str(ENVIRONMENT_JSON).unwrap();
+
+        let mock_server = MockServer::start();
+        let api_mock = mock_server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/environment-document/")
+                .header("X-Environment-Key", environment_key);
+            then.status(200).json_body(response_body);
+        });
+
+        let url = mock_server.url("/api/v1/");
+
+        let flagsmith_options = FlagsmithOptions {
+            api_url: url,
+            enable_local_evaluation:true,
+            ..Default::default()
+        };
+        // When
+        let _flagsmith = Flagsmith::new(environment_key.to_string(), flagsmith_options);
+        // let's wait for the thread to make the request
+        thread::sleep(std::time::Duration::from_millis(50));
+        // Then
+        api_mock.assert();
+
+    }
+
+    #[test]
+    fn polling_thread_updates_environment_on_each_refresh(){
+        // Given
+        let environment_key = "ser.test_environment_key";
+        let response_body: serde_json::Value = serde_json::from_str(ENVIRONMENT_JSON).unwrap();
+
+        let mock_server = MockServer::start();
+        let api_mock = mock_server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/environment-document/")
+                .header("X-Environment-Key", environment_key);
+            then.status(200).json_body(response_body);
+        });
+
+        let url = mock_server.url("/api/v1/");
+
+        let flagsmith_options = FlagsmithOptions {
+            api_url: url,
+            environment_refresh_interval_mills: 100,
+            enable_local_evaluation:true,
+            ..Default::default()
+        };
+        // When
+        let _flagsmith = Flagsmith::new(environment_key.to_string(), flagsmith_options);
+        thread::sleep(std::time::Duration::from_millis(250));
+        // Then
+        // 3 api calls to update environment should be made, one when the thread starts and 2
+        // for each subsequent refresh
+        api_mock.assert_hits(3);
+
+    }
+
 }

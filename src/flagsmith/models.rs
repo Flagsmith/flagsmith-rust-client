@@ -1,7 +1,7 @@
 use crate::flagsmith::analytics::AnalyticsProcessor;
+use core::f64;
 use flagsmith_flag_engine::features::FeatureState;
 use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
-use core::f64;
 use std::collections::HashMap;
 
 use crate::error;
@@ -39,35 +39,34 @@ impl Flag {
         };
         Some(flag)
     }
-    pub fn value_as_string(&self) -> Option<String>{
+    pub fn value_as_string(&self) -> Option<String> {
         match self.value.value_type {
             FlagsmithValueType::String => Some(self.value.value.clone()),
-            _ => None
+            _ => None,
         }
     }
-    pub fn value_as_bool(&self) -> Option<bool>{
+    pub fn value_as_bool(&self) -> Option<bool> {
         match self.value.value_type {
-            FlagsmithValueType::Bool=> match self.value.value.as_str(){
+            FlagsmithValueType::Bool => match self.value.value.as_str() {
                 "true" => Some(true),
                 "false" => Some(false),
-                _ => None
+                _ => None,
             },
-            _ => None
+            _ => None,
         }
     }
-    pub fn value_as_f64(&self) -> Option<f64>{
+    pub fn value_as_f64(&self) -> Option<f64> {
         match self.value.value_type {
-            FlagsmithValueType::Float=> Some(self.value.value.parse::<f64>().ok()?),
-            _ => None
+            FlagsmithValueType::Float => Some(self.value.value.parse::<f64>().ok()?),
+            _ => None,
         }
     }
-    pub fn value_as_i64(&self) -> Option<i64>{
+    pub fn value_as_i64(&self) -> Option<i64> {
         match self.value.value_type {
-            FlagsmithValueType::Float=> Some(self.value.value.parse::<i64>().ok()?),
-            _ => None
+            FlagsmithValueType::Integer => Some(self.value.value.parse::<i64>().ok()?),
+            _ => None,
         }
     }
-
 }
 
 #[derive(Clone)]
@@ -181,7 +180,6 @@ mod tests {
             "enabled": false
         }"#;
 
-
     #[test]
     fn can_create_flag_from_feature_state() {
         // Given
@@ -195,13 +193,13 @@ mod tests {
         assert_eq!(flag.enabled, feature_state.enabled);
         assert_eq!(flag.value, feature_state.get_value(None));
         assert_eq!(flag.feature_id, feature_state.feature.id);
-
     }
 
     #[test]
     fn can_create_flag_from_from_api_flag() {
         // Give
-        let feature_state_json: serde_json::Value = serde_json::from_str(FEATURE_STATE_JSON_STRING).unwrap();
+        let feature_state_json: serde_json::Value =
+            serde_json::from_str(FEATURE_STATE_JSON_STRING).unwrap();
         let expected_value: FlagsmithValue =
             serde_json::from_value(feature_state_json["feature_state_value"].clone()).unwrap();
 
@@ -209,18 +207,26 @@ mod tests {
         let flag = Flag::from_api_flag(&feature_state_json).unwrap();
 
         // Then
-        assert_eq!(flag.feature_name, feature_state_json["feature"]["name"].as_str().unwrap());
-        assert_eq!(flag.feature_id, feature_state_json["feature"]["id"].as_u64().unwrap() as u32);
+        assert_eq!(
+            flag.feature_name,
+            feature_state_json["feature"]["name"].as_str().unwrap()
+        );
+        assert_eq!(
+            flag.feature_id,
+            feature_state_json["feature"]["id"].as_u64().unwrap() as u32
+        );
         assert_eq!(flag.is_default, false);
-        assert_eq!(flag.enabled, feature_state_json["enabled"].as_bool().unwrap());
+        assert_eq!(
+            flag.enabled,
+            feature_state_json["enabled"].as_bool().unwrap()
+        );
         assert_eq!(flag.value, expected_value);
-
     }
 
     #[test]
     fn value_as_string() {
         // Give
-        let feature_state_json  = serde_json::json!({
+        let feature_state_json = serde_json::json!({
             "multivariate_feature_state_values": [],
             "feature_state_value": "test_value",
             "django_id": 1,
@@ -238,13 +244,12 @@ mod tests {
 
         // Then
         assert_eq!(flag.value_as_string().unwrap(), "test_value");
-
     }
 
     #[test]
     fn value_as_bool() {
         // Give
-        let feature_state_json  = serde_json::json!({
+        let feature_state_json = serde_json::json!({
             "multivariate_feature_state_values": [],
             "feature_state_value": true,
             "django_id": 1,
@@ -262,13 +267,12 @@ mod tests {
 
         // Then
         assert_eq!(flag.value_as_bool().unwrap(), true);
-
     }
 
     #[test]
     fn value_as_i64() {
         // Give
-        let feature_state_json  = serde_json::json!({
+        let feature_state_json = serde_json::json!({
             "multivariate_feature_state_values": [],
             "feature_state_value": 10,
             "django_id": 1,
@@ -286,13 +290,12 @@ mod tests {
 
         // Then
         assert_eq!(flag.value_as_i64().unwrap(), 10);
-
     }
 
     #[test]
     fn value_as_f64() {
         // Give
-        let feature_state_json  = serde_json::json!({
+        let feature_state_json = serde_json::json!({
             "multivariate_feature_state_values": [],
             "feature_state_value": 10.1,
             "django_id": 1,
@@ -310,12 +313,11 @@ mod tests {
 
         // Then
         assert_eq!(flag.value_as_f64().unwrap(), 10.1);
-
     }
     #[test]
     fn value_as_type_returns_none_if_value_is_of_a_different_type() {
         // Give
-        let feature_state_json  = serde_json::json!({
+        let feature_state_json = serde_json::json!({
             "multivariate_feature_state_values": [],
             "feature_state_value": 10.1,
             "django_id": 1,
@@ -333,6 +335,5 @@ mod tests {
 
         // Then
         assert_eq!(flag.value_as_i64().is_none(), true);
-
     }
 }

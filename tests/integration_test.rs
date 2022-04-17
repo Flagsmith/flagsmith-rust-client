@@ -6,13 +6,12 @@ use flagsmith::{Flagsmith, FlagsmithOptions};
 const ENVIRONMENT_KEY: &str = "ser.test_environment_key";
 
 mod fixtures;
+use fixtures::default_flag_handler;
 use fixtures::environment_json;
 use fixtures::flags_json;
 use fixtures::identities_json;
-use fixtures::default_flag_handler;
 use httpmock::prelude::*;
 use rstest::*;
-
 
 #[fixture]
 fn mock_server() -> MockServer {
@@ -85,6 +84,7 @@ fn test_get_environment_flags_calls_api_when_no_local_environment(
         fixtures::FEATURE_1_STR_VALUE
     );
     api_mock.assert();
+
 }
 #[rstest]
 fn test_get_identity_flags_uses_local_environment_when_available(
@@ -224,7 +224,7 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_with_traits(
 fn test_default_flag_is_not_used_when_environment_flags_returned(
     mock_server: MockServer,
     flags_json: serde_json::Value,
-    default_flag_handler: fn (&str) -> flagsmith::Flag
+    default_flag_handler: fn(&str) -> flagsmith::Flag,
 ) {
     let api_mock = mock_server.mock(|when, then| {
         when.method(GET)
@@ -251,10 +251,7 @@ fn test_default_flag_is_not_used_when_environment_flags_returned(
         flag.value_as_string().unwrap(),
         fixtures::FEATURE_1_STR_VALUE
     );
-    assert!(
-        flag.value_as_string().unwrap() !=
-        fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
-    );
+    assert!(flag.value_as_string().unwrap() != fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE);
     api_mock.assert();
 }
 
@@ -262,7 +259,7 @@ fn test_default_flag_is_not_used_when_environment_flags_returned(
 fn test_default_flag_is_used_when_no_matching_environment_flag_returned(
     mock_server: MockServer,
     flags_json: serde_json::Value,
-    default_flag_handler: fn (&str) -> flagsmith::Flag
+    default_flag_handler: fn(&str) -> flagsmith::Flag,
 ) {
     let api_mock = mock_server.mock(|when, then| {
         when.method(GET)
@@ -283,10 +280,7 @@ fn test_default_flag_is_used_when_no_matching_environment_flag_returned(
     let flag = flags.get_flag("feature_that_does_not_exists").unwrap();
     // Then
     assert_eq!(flag.is_default, true);
-    assert!(
-        flag.value_as_string().unwrap() !=
-        fixtures::FEATURE_1_STR_VALUE
-    );
+    assert!(flag.value_as_string().unwrap() != fixtures::FEATURE_1_STR_VALUE);
     assert_eq!(
         flag.value_as_string().unwrap(),
         fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
@@ -298,7 +292,7 @@ fn test_default_flag_is_used_when_no_matching_environment_flag_returned(
 fn test_default_flag_is_not_used_when_identity_flags_returned(
     mock_server: MockServer,
     identities_json: serde_json::Value,
-    default_flag_handler: fn (&str) -> flagsmith::Flag
+    default_flag_handler: fn(&str) -> flagsmith::Flag,
 ) {
     // Given
     let identifier = "test_identity";
@@ -331,19 +325,15 @@ fn test_default_flag_is_not_used_when_identity_flags_returned(
         flag.value_as_string().unwrap(),
         fixtures::FEATURE_1_STR_VALUE
     );
-    assert!(
-        flag.value_as_string().unwrap() !=
-            fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
-    );
+    assert!(flag.value_as_string().unwrap() != fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE);
     api_mock.assert();
-
 }
 
 #[rstest]
 fn test_default_flag_is_used_when_no_matching_identity_flags_returned(
     mock_server: MockServer,
     identities_json: serde_json::Value,
-    default_flag_handler: fn (&str) -> flagsmith::Flag
+    default_flag_handler: fn(&str) -> flagsmith::Flag,
 ) {
     // Given
     let identifier = "test_identity";
@@ -370,10 +360,7 @@ fn test_default_flag_is_used_when_no_matching_identity_flags_returned(
     let flag = flags.get_flag("feature_that_does_not_exists").unwrap();
     // Then
     assert_eq!(flag.is_default, true);
-    assert!(
-        flag.value_as_string().unwrap() !=
-            fixtures::FEATURE_1_STR_VALUE
-    );
+    assert!(flag.value_as_string().unwrap() != fixtures::FEATURE_1_STR_VALUE);
     assert_eq!(
         flag.value_as_string().unwrap(),
         fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
@@ -381,11 +368,10 @@ fn test_default_flag_is_used_when_no_matching_identity_flags_returned(
     api_mock.assert();
 }
 
-
 #[rstest]
 fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_environment(
     mock_server: MockServer,
-    default_flag_handler: fn (&str) -> flagsmith::Flag
+    default_flag_handler: fn(&str) -> flagsmith::Flag,
 ) {
     // Give
     let api_mock = mock_server.mock(|when, then| {
@@ -407,10 +393,7 @@ fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_e
     let flag = flags.get_flag(fixtures::FEATURE_1_NAME).unwrap();
     // Then
     assert_eq!(flag.is_default, true);
-    assert!(
-        flag.value_as_string().unwrap() !=
-        fixtures::FEATURE_1_STR_VALUE
-    );
+    assert!(flag.value_as_string().unwrap() != fixtures::FEATURE_1_STR_VALUE);
     assert_eq!(
         flag.value_as_string().unwrap(),
         fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
@@ -421,7 +404,7 @@ fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_e
 #[rstest]
 fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_identity(
     mock_server: MockServer,
-    default_flag_handler: fn (&str) -> flagsmith::Flag
+    default_flag_handler: fn(&str) -> flagsmith::Flag,
 ) {
     // Given
     let identifier = "test_identity";
@@ -448,10 +431,7 @@ fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_i
     let flag = flags.get_flag("feature_that_does_not_exists").unwrap();
     // Then
     assert_eq!(flag.is_default, true);
-    assert!(
-        flag.value_as_string().unwrap() !=
-            fixtures::FEATURE_1_STR_VALUE
-    );
+    assert!(flag.value_as_string().unwrap() != fixtures::FEATURE_1_STR_VALUE);
     assert_eq!(
         flag.value_as_string().unwrap(),
         fixtures::DEFAULT_FLAG_HANDLER_FLAG_VALUE
@@ -459,3 +439,50 @@ fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_i
     api_mock.assert();
 }
 
+#[rstest]
+fn test_flagsmith_api_error_is_returned_if_something_goes_wrong_with_the_request(
+    mock_server: MockServer,
+) {
+    // Give
+    let _api_mock = mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/flags/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(502).json_body({}); // returning 502
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let err = flagsmith.get_environment_flags().err().unwrap();
+    assert_eq!(err.kind, flagsmith::error::ErrorKind::FlagsmithAPIError);
+}
+#[rstest]
+fn test_flagsmith_client_error_is_returned_if_get_flag_is_called_with_a_flag_that_does_not_exists_without_default_handler(
+    mock_server: MockServer,
+    flags_json: serde_json::Value,
+) {
+    // Given
+    let _api_mock = mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/flags/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(200).json_body(flags_json);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+    // When
+    let err = flagsmith.get_environment_flags().unwrap().get_flag("flag_that_does_not_exists").err().unwrap();
+
+    // Then
+    assert_eq!(err.kind, flagsmith::error::ErrorKind::FlagsmithAPIError);
+
+}

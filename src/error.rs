@@ -4,12 +4,12 @@ use std::fmt;
 /// Wraps several types of errors.
 #[derive(Debug)]
 pub struct Error {
-    kind: ErrorKind,
-    msg: String,
+    pub kind: ErrorKind,
+    pub msg: String,
 }
 
 /// Defines error kind.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ErrorKind {
     FlagsmithClientError,
     FlagsmithAPIError,

@@ -1,6 +1,7 @@
 use crate::flagsmith::analytics::AnalyticsProcessor;
 use flagsmith_flag_engine::features::FeatureState;
 use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
+use core::f64;
 use std::collections::HashMap;
 
 use crate::error;
@@ -44,6 +45,29 @@ impl Flag {
             _ => None
         }
     }
+    pub fn value_as_bool(&self) -> Option<bool>{
+        match self.value.value_type {
+            FlagsmithValueType::Bool=> match self.value.value.as_str(){
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None
+            },
+            _ => None
+        }
+    }
+    pub fn value_as_f64(&self) -> Option<f64>{
+        match self.value.value_type {
+            FlagsmithValueType::Float=> Some(self.value.value.parse::<f64>().ok()?),
+            _ => None
+        }
+    }
+    pub fn value_as_i64(&self) -> Option<i64>{
+        match self.value.value_type {
+            FlagsmithValueType::Float=> Some(self.value.value.parse::<i64>().ok()?),
+            _ => None
+        }
+    }
+
 }
 
 #[derive(Clone)]
@@ -190,6 +214,125 @@ mod tests {
         assert_eq!(flag.is_default, false);
         assert_eq!(flag.enabled, feature_state_json["enabled"].as_bool().unwrap());
         assert_eq!(flag.value, expected_value);
+
+    }
+
+    #[test]
+    fn value_as_string() {
+        // Give
+        let feature_state_json  = serde_json::json!({
+            "multivariate_feature_state_values": [],
+            "feature_state_value": "test_value",
+            "django_id": 1,
+            "feature": {
+                "name": "feature1",
+                "type": null,
+                "id": 1
+            },
+            "segment_id": null,
+            "enabled": false
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&feature_state_json).unwrap();
+
+        // Then
+        assert_eq!(flag.value_as_string().unwrap(), "test_value");
+
+    }
+
+    #[test]
+    fn value_as_bool() {
+        // Give
+        let feature_state_json  = serde_json::json!({
+            "multivariate_feature_state_values": [],
+            "feature_state_value": true,
+            "django_id": 1,
+            "feature": {
+                "name": "feature1",
+                "type": null,
+                "id": 1
+            },
+            "segment_id": null,
+            "enabled": false
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&feature_state_json).unwrap();
+
+        // Then
+        assert_eq!(flag.value_as_bool().unwrap(), true);
+
+    }
+
+    #[test]
+    fn value_as_i64() {
+        // Give
+        let feature_state_json  = serde_json::json!({
+            "multivariate_feature_state_values": [],
+            "feature_state_value": 10,
+            "django_id": 1,
+            "feature": {
+                "name": "feature1",
+                "type": null,
+                "id": 1
+            },
+            "segment_id": null,
+            "enabled": false
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&feature_state_json).unwrap();
+
+        // Then
+        assert_eq!(flag.value_as_i64().unwrap(), 10);
+
+    }
+
+    #[test]
+    fn value_as_f64() {
+        // Give
+        let feature_state_json  = serde_json::json!({
+            "multivariate_feature_state_values": [],
+            "feature_state_value": 10.1,
+            "django_id": 1,
+            "feature": {
+                "name": "feature1",
+                "type": null,
+                "id": 1
+            },
+            "segment_id": null,
+            "enabled": false
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&feature_state_json).unwrap();
+
+        // Then
+        assert_eq!(flag.value_as_f64().unwrap(), 10.1);
+
+    }
+    #[test]
+    fn value_as_type_returns_none_if_value_is_of_a_different_type() {
+        // Give
+        let feature_state_json  = serde_json::json!({
+            "multivariate_feature_state_values": [],
+            "feature_state_value": 10.1,
+            "django_id": 1,
+            "feature": {
+                "name": "feature1",
+                "type": null,
+                "id": 1
+            },
+            "segment_id": null,
+            "enabled": false
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&feature_state_json).unwrap();
+
+        // Then
+        assert_eq!(flag.value_as_i64().is_none(), true);
 
     }
 }

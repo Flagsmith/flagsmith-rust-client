@@ -2,6 +2,8 @@ use flagsmith_flag_engine::engine;
 use flagsmith_flag_engine::environments::builders::build_environment_struct;
 use flagsmith_flag_engine::environments::Environment;
 use flagsmith_flag_engine::identities::{Identity, Trait};
+use flagsmith_flag_engine::segments::evaluator::get_identity_segments;
+use flagsmith_flag_engine::segments::Segment;
 use log::debug;
 use reqwest::header::{self, HeaderMap};
 use serde_json::json;
@@ -11,8 +13,8 @@ mod analytics;
 pub mod models;
 use self::analytics::AnalyticsProcessor;
 use self::models::{Flag, Flags};
-use std::sync::mpsc::{self, Sender, TryRecvError};
 use super::error;
+use std::sync::mpsc::{self, Sender, TryRecvError};
 const DEFAULT_API_URL: &str = "https://api.flagsmith.com/api/v1/";
 
 pub struct FlagsmithOptions {
@@ -131,7 +133,6 @@ impl Flagsmith {
             return Ok(self.get_environment_flags_from_document(environment));
         }
         return self.default_handler_if_err(self.get_environment_flags_from_api());
-
     }
 
     // Returns all the flags for the current environment for a given identity. Will also
@@ -167,17 +168,40 @@ impl Flagsmith {
         }
         return self.default_handler_if_err(self.get_identity_flags_from_api(identifier, traits));
     }
+    // Returns a list of segments that the given identity is part of
+    pub fn get_identity_segments(
+        &self,
+        identifier: &str,
+        traits: Option<Vec<Trait>>,
+    ) -> Result<Vec<Segment>, error::Error> {
+        let data = self.datastore.lock().unwrap();
+        if data.environment.is_none() {
+            return Err(error::Error::new(
+                error::ErrorKind::FlagsmithClientError,
+                "Local evaluation required to obtain identity segments.".to_string(),
+            ));
+        }
+        let environment = data.environment.as_ref().unwrap();
+        let identity_model =
+            self.build_identity_model(environment, identifier, traits.clone().unwrap_or(vec![]))?;
+        let segments = get_identity_segments(environment, &identity_model, traits.as_ref());
+        return Ok(segments);
+    }
 
-    fn default_handler_if_err(&self, result: Result<Flags, error::Error>) -> Result<Flags, error::Error>{
-        match result{
+    fn default_handler_if_err(
+        &self,
+        result: Result<Flags, error::Error>,
+    ) -> Result<Flags, error::Error> {
+        match result {
             Ok(result) => Ok(result),
             Err(e) => {
-                if self.options.default_flag_handler.is_some(){
+                if self.options.default_flag_handler.is_some() {
                     return Ok(Flags::from_api_flags(
                         &vec![],
                         self.analytics_processor.clone(),
                         self.options.default_flag_handler,
-                    ).unwrap())
+                    )
+                    .unwrap());
                 } else {
                     Err(e)
                 }

@@ -1,22 +1,19 @@
+use flagsmith::{Flagsmith, FlagsmithOptions};
 use flagsmith_flag_engine::identities::Trait;
 use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
-//use flagsmith_flag_engine::Flag;
-use flagsmith::{Flagsmith, FlagsmithOptions};
 
-const ENVIRONMENT_KEY: &str = "ser.test_environment_key";
+use httpmock::prelude::*;
+use rstest::*;
 
 mod fixtures;
+
 use fixtures::default_flag_handler;
 use fixtures::environment_json;
 use fixtures::flags_json;
 use fixtures::identities_json;
-use httpmock::prelude::*;
-use rstest::*;
-
-#[fixture]
-fn mock_server() -> MockServer {
-    MockServer::start()
-}
+use fixtures::local_eval_flagsmith;
+use fixtures::mock_server;
+use fixtures::ENVIRONMENT_KEY;
 
 #[rstest]
 fn test_get_environment_flags_uses_local_environment_when_available(
@@ -84,7 +81,6 @@ fn test_get_environment_flags_calls_api_when_no_local_environment(
         fixtures::FEATURE_1_STR_VALUE
     );
     api_mock.assert();
-
 }
 #[rstest]
 fn test_get_identity_flags_uses_local_environment_when_available(
@@ -461,6 +457,7 @@ fn test_flagsmith_api_error_is_returned_if_something_goes_wrong_with_the_request
     let err = flagsmith.get_environment_flags().err().unwrap();
     assert_eq!(err.kind, flagsmith::error::ErrorKind::FlagsmithAPIError);
 }
+
 #[rstest]
 fn test_flagsmith_client_error_is_returned_if_get_flag_is_called_with_a_flag_that_does_not_exists_without_default_handler(
     mock_server: MockServer,
@@ -480,9 +477,53 @@ fn test_flagsmith_client_error_is_returned_if_get_flag_is_called_with_a_flag_tha
     };
     let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
     // When
-    let err = flagsmith.get_environment_flags().unwrap().get_flag("flag_that_does_not_exists").err().unwrap();
+    let err = flagsmith
+        .get_environment_flags()
+        .unwrap()
+        .get_flag("flag_that_does_not_exists")
+        .err()
+        .unwrap();
 
     // Then
     assert_eq!(err.kind, flagsmith::error::ErrorKind::FlagsmithAPIError);
+}
 
+#[rstest]
+fn test_get_identity_segments_no_traits(local_eval_flagsmith: Flagsmith) {
+    // Given
+    let identifier = "some_identifier";
+
+    // When
+    let segments = local_eval_flagsmith
+        .get_identity_segments(identifier, None)
+        .unwrap();
+
+    //Then
+    assert_eq!(segments.len(), 0)
+}
+
+#[rstest]
+fn test_get_identity_segments_with_valid_trait(local_eval_flagsmith: Flagsmith) {
+    // Given
+    let identifier = "some_identifier";
+
+    // lifted from fixtures::environment_json
+    let trait_key = "foo";
+    let trait_value = "bar";
+
+    let traits = vec![Trait {
+        trait_key: trait_key.to_string(),
+        trait_value: FlagsmithValue {
+            value: trait_value.to_string(),
+            value_type: FlagsmithValueType::String,
+        },
+    }];
+    // When
+    let segments = local_eval_flagsmith
+        .get_identity_segments(identifier, Some(traits))
+        .unwrap();
+
+    //Then
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].name, "Test Segment");
 }

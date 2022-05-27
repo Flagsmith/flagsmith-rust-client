@@ -28,7 +28,7 @@ pub fn environment_json() -> serde_json::Value {
                 "segments": [
                     {
                         "id": 1,
-                        "name": "Test segment",
+                        "name": "Test Segment",
                         "feature_states":[],
                         "rules": [
                             {

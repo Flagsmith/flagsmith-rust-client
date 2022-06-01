@@ -1,0 +1,21 @@
+name: Publish Cargo Package
+
+on:
+    push:
+        tags:
+            - '*'
+
+jobs:
+    package:
+        runs-on: ubuntu-latest
+        name: Publish Cargo Package
+
+        steps:
+            - name: Cloning repo
+              uses: actions/checkout@v2
+              with:
+                  fetch-depth: 0
+
+            - uses: actions/checkout@v2
+            - name: Publish
+              run: cargo publish --token  ${{ secrets.CRATES_TOKEN }}

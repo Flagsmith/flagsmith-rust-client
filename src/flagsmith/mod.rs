@@ -33,10 +33,10 @@ impl Default for FlagsmithOptions {
         FlagsmithOptions {
             api_url: DEFAULT_API_URL.to_string(),
             custom_headers: header::HeaderMap::new(),
-            request_timeout_seconds: 60,
+            request_timeout_seconds: 10,
             enable_local_evaluation: false,
             enable_analytics: false,
-            environment_refresh_interval_mills: 10 * 1000,
+            environment_refresh_interval_mills: 60 * 1000,
             default_flag_handler: None,
         }
     }

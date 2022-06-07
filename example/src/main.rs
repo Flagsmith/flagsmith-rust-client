@@ -31,7 +31,6 @@ fn default_flag_handler(feature_name: &str) -> Flag {
     return flag;
 }
 
-use std::{thread, time::Duration};
 #[get("/?<identifier>&<trait_key>&<trait_value>")]
 fn home(
     identifier: Option<String>,
@@ -44,7 +43,11 @@ fn home(
         ..Default::default()
     };
 
-    let flagsmith = Flagsmith::new(env::var("FLAGSMITH_ENVIRONMENT_KEY").expect("FLAGSMITH_ENVIRONMENT_KEY not found in environment"), options);
+    let flagsmith = Flagsmith::new(
+        env::var("FLAGSMITH_ENVIRONMENT_KEY")
+            .expect("FLAGSMITH_ENVIRONMENT_KEY not found in environment"),
+        options,
+    );
     let flags;
     if identifier.is_some() {
         let traits = match trait_key {
@@ -59,7 +62,7 @@ fn home(
             None => None,
         };
         flags = flagsmith
-            .get_identity_flags(identifier.as_ref().unwrap().to_string(), traits)
+            .get_identity_flags(identifier.as_ref().unwrap(), traits)
             .unwrap();
     } else {
         // Get the default flags for the current environment

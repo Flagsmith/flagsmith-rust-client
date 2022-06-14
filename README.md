@@ -8,7 +8,7 @@
 
 > Flagsmith allows you to manage feature flags and remote config across multiple projects, environments and organisations.
 
-The SDK for Android and Java applications for [https://www.flagsmith.com/](https://www.flagsmith.com/).
+The SDK for Rust applications for [https://www.flagsmith.com/](https://www.flagsmith.com/).
 
 ## Adding to your project
 

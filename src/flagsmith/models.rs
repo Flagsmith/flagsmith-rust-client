@@ -141,7 +141,7 @@ impl Flags {
                         .as_ref()
                         .unwrap()
                         .tx
-                        .send(flag.feature_id);
+                        .send(flag.feature_name.clone());
                 };
                 return Ok(flag.clone());
             }

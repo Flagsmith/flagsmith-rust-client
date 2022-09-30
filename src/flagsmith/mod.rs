@@ -16,7 +16,7 @@ use self::models::{Flag, Flags};
 use super::error;
 use std::sync::mpsc::{self, Sender, TryRecvError};
 
-const DEFAULT_API_URL: &str = "https://edge.flagsmith.com/api/v1/";
+const DEFAULT_API_URL: &str = "https://edge.api.flagsmith.com/api/v1/";
 
 pub struct FlagsmithOptions {
     pub api_url: String,

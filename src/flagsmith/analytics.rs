@@ -1,8 +1,7 @@
 use log::{debug, warn};
 use reqwest::header::HeaderMap;
 use serde_json;
-use std::sync::mpsc;
-use std::sync::mpsc::{Sender, TryRecvError};
+use flume;
 use std::{collections::HashMap, thread};
 
 use std::sync::{Arc,  RwLock};
@@ -10,7 +9,7 @@ static ANALYTICS_TIMER_IN_MILLI: u64 = 10 * 1000;
 
 #[derive(Clone, Debug)]
 pub struct AnalyticsProcessor {
-    pub tx: Sender<String>,
+    pub tx: flume::Sender<String>,
     _analytics_data: Arc<RwLock<HashMap<String, u32>>>,
 }
 
@@ -21,7 +20,7 @@ impl AnalyticsProcessor {
         timeout: std::time::Duration,
         timer: Option<u64>,
     ) -> Self {
-        let (tx, rx) = mpsc::channel::<String>();
+        let (tx, rx) = flume::unbounded();
         let client = reqwest::blocking::Client::builder()
             .default_headers(headers)
             .timeout(timeout)
@@ -49,8 +48,8 @@ impl AnalyticsProcessor {
                                 .and_modify(|e| *e += 1)
                                 .or_insert(1);
                         }
-                        Err(TryRecvError::Empty) => {}
-                        Err(TryRecvError::Disconnected) => {
+                        Err(flume::TryRecvError::Empty) => {}
+                        Err(flume::TryRecvError::Disconnected) => {
                             debug!("Shutting down analytics thread ");
                             break;
                         }

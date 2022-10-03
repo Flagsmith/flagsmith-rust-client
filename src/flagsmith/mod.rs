@@ -14,7 +14,7 @@ pub mod models;
 use self::analytics::AnalyticsProcessor;
 use self::models::{Flag, Flags};
 use super::error;
-use std::sync::mpsc::{self, Sender, TryRecvError};
+use std::sync::mpsc::{self, SyncSender, TryRecvError};
 
 const DEFAULT_API_URL: &str = "https://edge.api.flagsmith.com/api/v1/";
 
@@ -50,7 +50,7 @@ pub struct Flagsmith {
     options: FlagsmithOptions,
     datastore: Arc<Mutex<DataStore>>,
     analytics_processor: Option<AnalyticsProcessor>,
-    _polling_thead_tx: Sender<u32>, // used for shutting down polling manager
+    _polling_thread_tx: SyncSender<u32>, // to trigger polling manager shutdown
 }
 
 struct DataStore {
@@ -88,7 +88,7 @@ impl Flagsmith {
         // Put the environment model behind mutex to
         // to share it safely between threads
         let ds = Arc::new(Mutex::new(DataStore { environment: None }));
-        let (tx, rx) = mpsc::channel::<u32>();
+        let (tx, rx) = mpsc::sync_channel::<u32>(1);
         let flagsmith = Flagsmith {
             client: client.clone(),
             environment_flags_url,
@@ -97,7 +97,7 @@ impl Flagsmith {
             options: flagsmith_options,
             datastore: Arc::clone(&ds),
             analytics_processor,
-            _polling_thead_tx: tx,
+            _polling_thread_tx: tx,
         };
 
         // Create a thread to update environment document
@@ -369,6 +369,14 @@ mod tests {
     }"#;
 
     #[test]
+    fn client_implements_send_and_sync(){
+        // Given
+        fn implements_send_and_sync<T: Send + Sync>() {}
+        // Then
+        implements_send_and_sync::<Flagsmith>();
+    }
+
+    #[test]
     fn polling_thread_updates_environment_on_start() {
         // Given
         let environment_key = "ser.test_environment_key";
@@ -391,6 +399,7 @@ mod tests {
         };
         // When
         let _flagsmith = Flagsmith::new(environment_key.to_string(), flagsmith_options);
+
         // let's wait for the thread to make the request
         thread::sleep(std::time::Duration::from_millis(50));
         // Then

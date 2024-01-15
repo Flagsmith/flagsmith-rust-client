@@ -1,10 +1,10 @@
+use flume;
 use log::{debug, warn};
 use reqwest::header::HeaderMap;
 use serde_json;
-use flume;
 use std::{collections::HashMap, thread};
 
-use std::sync::{Arc,  RwLock};
+use std::sync::{Arc, RwLock};
 static ANALYTICS_TIMER_IN_MILLI: u64 = 10 * 1000;
 
 #[derive(Clone, Debug)]

@@ -1,3 +1,6 @@
+use self::analytics::AnalyticsProcessor;
+use self::models::{Flag, Flags};
+use super::error;
 use flagsmith_flag_engine::engine;
 use flagsmith_flag_engine::environments::builders::build_environment_struct;
 use flagsmith_flag_engine::environments::Environment;
@@ -7,14 +10,14 @@ use flagsmith_flag_engine::segments::Segment;
 use log::debug;
 use reqwest::header::{self, HeaderMap};
 use serde_json::json;
+use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
+
 mod analytics;
+
 pub mod models;
-use self::analytics::AnalyticsProcessor;
-use self::models::{Flag, Flags};
-use super::error;
-use std::sync::mpsc::{self, SyncSender, TryRecvError};
+pub mod offline_handler;
 
 const DEFAULT_API_URL: &str = "https://edge.api.flagsmith.com/api/v1/";
 
@@ -26,6 +29,8 @@ pub struct FlagsmithOptions {
     pub environment_refresh_interval_mills: u64,
     pub enable_analytics: bool,
     pub default_flag_handler: Option<fn(&str) -> Flag>,
+    pub offline_handler: Option<Box<dyn offline_handler::OfflineHandler + Send + Sync>>,
+    pub offline_mode: bool,
 }
 
 impl Default for FlagsmithOptions {
@@ -38,6 +43,8 @@ impl Default for FlagsmithOptions {
             enable_analytics: false,
             environment_refresh_interval_mills: 60 * 1000,
             default_flag_handler: None,
+            offline_handler: None,
+            offline_mode: false,
         }
     }
 }
@@ -75,6 +82,20 @@ impl Flagsmith {
         let environment_flags_url = format!("{}flags/", flagsmith_options.api_url);
         let identities_url = format!("{}identities/", flagsmith_options.api_url);
         let environment_url = format!("{}environment-document/", flagsmith_options.api_url);
+
+        if flagsmith_options.offline_mode && flagsmith_options.offline_handler.is_none() {
+            panic!("offline_handler must be set to use offline_mode")
+        }
+        if flagsmith_options.default_flag_handler.is_some()
+            && flagsmith_options.offline_handler.is_some()
+        {
+            panic!("default_flag_handler cannot be used with offline_handler")
+        }
+        if flagsmith_options.enable_local_evaluation && flagsmith_options.offline_handler.is_some()
+        {
+            panic!("offline_handler cannot be used with local evaluation")
+        }
+
         // Initialize analytics processor
         let analytics_processor = match flagsmith_options.enable_analytics {
             true => Some(AnalyticsProcessor::new(
@@ -85,10 +106,12 @@ impl Flagsmith {
             )),
             false => None,
         };
+
         // Put the environment model behind mutex to
         // to share it safely between threads
         let ds = Arc::new(Mutex::new(DataStore { environment: None }));
         let (tx, rx) = mpsc::sync_channel::<u32>(1);
+
         let flagsmith = Flagsmith {
             client: client.clone(),
             environment_flags_url,
@@ -100,10 +123,23 @@ impl Flagsmith {
             _polling_thread_tx: tx,
         };
 
+        if flagsmith.options.offline_handler.is_some() {
+            let mut data = flagsmith.datastore.lock().unwrap();
+            data.environment = Some(
+                flagsmith
+                    .options
+                    .offline_handler
+                    .as_ref()
+                    .unwrap()
+                    .get_environment(),
+            )
+        }
+
         // Create a thread to update environment document
         // If enabled
         let environment_refresh_interval_mills =
             flagsmith.options.environment_refresh_interval_mills;
+
         if flagsmith.options.enable_local_evaluation {
             let ds = Arc::clone(&ds);
             thread::spawn(move || loop {
@@ -369,7 +405,7 @@ mod tests {
     }"#;
 
     #[test]
-    fn client_implements_send_and_sync(){
+    fn client_implements_send_and_sync() {
         // Given
         fn implements_send_and_sync<T: Send + Sync>() {}
         // Then

@@ -1,3 +1,4 @@
+use flagsmith::flagsmith::offline_handler;
 use flagsmith::{Flagsmith, FlagsmithOptions};
 use flagsmith_flag_engine::identities::Trait;
 use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
@@ -15,6 +16,43 @@ use fixtures::local_eval_flagsmith;
 use fixtures::mock_server;
 use fixtures::ENVIRONMENT_KEY;
 
+#[rstest]
+#[should_panic(expected = "default_flag_handler cannot be used with offline_handler")]
+fn test_flagsmith_panics_if_both_default_handler_and_offline_hanlder_are_set(
+    default_flag_handler: fn(&str) -> flagsmith::Flag,
+) {
+    let handler =
+        offline_handler::LocalFileHandler::new("tests/fixtures/environment.json").unwrap();
+    let flagsmith_options = FlagsmithOptions {
+        default_flag_handler: Some(default_flag_handler),
+        offline_handler: Some(Box::new(handler)),
+        ..Default::default()
+    };
+    Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+}
+
+#[rstest]
+#[should_panic(expected = "offline_handler must be set to use offline_mode")]
+fn test_flagsmith_panics_if_offline_mode_is_used_without_offline_hanlder() {
+    let flagsmith_options = FlagsmithOptions {
+        offline_mode: true,
+        ..Default::default()
+    };
+    Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+}
+
+#[rstest]
+#[should_panic(expected = "offline_handler cannot be used with local evaluation")]
+fn test_flagsmith_should_panic_if_local_evaluation_mode_is_used_with_offline_handler() {
+    let handler =
+        offline_handler::LocalFileHandler::new("tests/fixtures/environment.json").unwrap();
+    let flagsmith_options = FlagsmithOptions {
+        enable_local_evaluation: true,
+        offline_handler: Some(Box::new(handler)),
+        ..Default::default()
+    };
+    Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+}
 #[rstest]
 fn test_get_environment_flags_uses_local_environment_when_available(
     mock_server: MockServer,
@@ -82,6 +120,84 @@ fn test_get_environment_flags_calls_api_when_no_local_environment(
     );
     api_mock.assert();
 }
+
+#[rstest]
+fn test_offline_mode() {
+    // Given
+    let handler =
+        offline_handler::LocalFileHandler::new("tests/fixtures/environment.json").unwrap();
+    let flagsmith_options = FlagsmithOptions {
+        offline_handler: Some(Box::new(handler)),
+        ..Default::default()
+    };
+
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let env_flags = flagsmith.get_environment_flags().unwrap().all_flags();
+    let identity_flags = flagsmith
+        .get_identity_flags("test_identity", None)
+        .unwrap()
+        .all_flags();
+
+    // Then
+    assert_eq!(env_flags.len(), 1);
+    assert_eq!(env_flags[0].feature_name, fixtures::FEATURE_1_NAME);
+    assert_eq!(env_flags[0].feature_id, fixtures::FEATURE_1_ID);
+    assert_eq!(
+        env_flags[0].value_as_string().unwrap(),
+        fixtures::FEATURE_1_STR_VALUE
+    );
+
+    // And
+    assert_eq!(identity_flags.len(), 1);
+    assert_eq!(identity_flags[0].feature_name, fixtures::FEATURE_1_NAME);
+    assert_eq!(identity_flags[0].feature_id, fixtures::FEATURE_1_ID);
+    assert_eq!(
+        identity_flags[0].value_as_string().unwrap(),
+        fixtures::FEATURE_1_STR_VALUE
+    );
+}
+
+#[rstest]
+fn test_offline_handler_is_used_if_request_fails(mock_server: MockServer) {
+    let url = mock_server.url("/api/v1/");
+    let handler =
+        offline_handler::LocalFileHandler::new("tests/fixtures/environment.json").unwrap();
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        offline_handler: Some(Box::new(handler)),
+        ..Default::default()
+    };
+
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let env_flags = flagsmith.get_environment_flags().unwrap().all_flags();
+    let identity_flags = flagsmith
+        .get_identity_flags("test_identity", None)
+        .unwrap()
+        .all_flags();
+
+    // Then
+    assert_eq!(env_flags.len(), 1);
+    assert_eq!(env_flags[0].feature_name, fixtures::FEATURE_1_NAME);
+    assert_eq!(env_flags[0].feature_id, fixtures::FEATURE_1_ID);
+    assert_eq!(
+        env_flags[0].value_as_string().unwrap(),
+        fixtures::FEATURE_1_STR_VALUE
+    );
+
+    // And
+    assert_eq!(identity_flags.len(), 1);
+    assert_eq!(identity_flags[0].feature_name, fixtures::FEATURE_1_NAME);
+    assert_eq!(identity_flags[0].feature_id, fixtures::FEATURE_1_ID);
+    assert_eq!(
+        identity_flags[0].value_as_string().unwrap(),
+        fixtures::FEATURE_1_STR_VALUE
+    );
+}
+
 #[rstest]
 fn test_get_identity_flags_uses_local_environment_when_available(
     mock_server: MockServer,

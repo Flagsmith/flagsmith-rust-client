@@ -143,6 +143,10 @@ impl Flagsmith {
             flagsmith.options.environment_refresh_interval_mills;
 
         if flagsmith.options.enable_local_evaluation {
+            // Update environment once...
+            update_environment(&client, &ds, &environment_url).unwrap();
+            
+            // ...and continue updating in the background
             let ds = Arc::clone(&ds);
             thread::spawn(move || loop {
                 match rx.try_recv() {
@@ -152,10 +156,8 @@ impl Flagsmith {
                     }
                     Err(TryRecvError::Empty) => {}
                 }
-
-                update_environment(&client, &ds, &environment_url).unwrap();
-
                 thread::sleep(Duration::from_millis(environment_refresh_interval_mills));
+                update_environment(&client, &ds, &environment_url).unwrap();
             });
         }
         return flagsmith;
@@ -581,7 +583,6 @@ mod tests {
 
         // When
         let mut _flagsmith = Flagsmith::new(environment_key.to_string(), flagsmith_options);
-        thread::sleep(std::time::Duration::from_millis(250));
 
         // Then
         let flags = _flagsmith.get_environment_flags();

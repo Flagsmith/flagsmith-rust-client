@@ -1,3 +1,4 @@
+use flagsmith::flagsmith::models::SDKTrait;
 use flagsmith::flagsmith::offline_handler;
 use flagsmith::{Flagsmith, FlagsmithOptions};
 use flagsmith_flag_engine::identities::Trait;
@@ -136,7 +137,7 @@ fn test_offline_mode() {
     // When
     let env_flags = flagsmith.get_environment_flags().unwrap().all_flags();
     let identity_flags = flagsmith
-        .get_identity_flags("test_identity", None)
+        .get_identity_flags("test_identity", None, None)
         .unwrap()
         .all_flags();
 
@@ -175,7 +176,7 @@ fn test_offline_handler_is_used_if_request_fails(mock_server: MockServer) {
     // When
     let env_flags = flagsmith.get_environment_flags().unwrap().all_flags();
     let identity_flags = flagsmith
-        .get_identity_flags("test_identity", None)
+        .get_identity_flags("test_identity", None, None)
         .unwrap()
         .all_flags();
 
@@ -223,7 +224,7 @@ fn test_get_identity_flags_uses_local_environment_when_available(
 
     // Then
     let all_flags = flagsmith
-        .get_identity_flags("test_identity", None)
+        .get_identity_flags("test_identity", None, None)
         .unwrap()
         .all_flags();
     assert_eq!(all_flags.len(), 1);
@@ -249,7 +250,8 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_no_traits(
             .header("X-Environment-Key", ENVIRONMENT_KEY)
             .json_body(serde_json::json!({
                 "identifier": identifier,
-                "traits": []
+                "traits": [],
+                "transient": false,
             }));
         then.status(200).json_body(identities_json);
     });
@@ -263,7 +265,7 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_no_traits(
     // When
 
     let all_flags = flagsmith
-        .get_identity_flags(identifier, None)
+        .get_identity_flags(identifier, None, None)
         .unwrap()
         .all_flags();
 
@@ -296,7 +298,8 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_with_traits(
             .header("content-type", "application/json")
             .json_body(serde_json::json!({
                 "identifier": identifier,
-                "traits": [{"trait_key":trait_key, "trait_value": trait_value}]
+                "traits": [{"trait_key":trait_key, "trait_value": trait_value, "transient": false}],
+                "transient": false,
             }));
         then.status(200).json_body(identities_json);
     });
@@ -308,15 +311,15 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_with_traits(
     let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
 
     // When
-    let traits = vec![Trait {
-        trait_key: trait_key.to_string(),
-        trait_value: FlagsmithValue {
+    let traits = vec![SDKTrait::new(
+        trait_key.to_string(),
+        FlagsmithValue {
             value: trait_value.to_string(),
             value_type: FlagsmithValueType::String,
         },
-    }];
+    )];
     let all_flags = flagsmith
-        .get_identity_flags(identifier, Some(traits))
+        .get_identity_flags(identifier, Some(traits), None)
         .unwrap()
         .all_flags();
 
@@ -331,6 +334,113 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_with_traits(
 
     api_mock.assert();
 }
+
+#[rstest]
+fn test_get_identity_flags_calls_api_when_no_local_environment_with_transient_traits(
+    mock_server: MockServer,
+    identities_json: serde_json::Value,
+) {
+    // Given
+    let identifier = "test_identity";
+    let trait_key = "trait_key1";
+    let trait_value = "trait_value1";
+    let transient_trait_key = "trait_key2";
+
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/identities/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({
+                "identifier": identifier,
+                "traits": [
+                    {"trait_key":trait_key, "trait_value": trait_value, "transient": false},
+                    {"trait_key":transient_trait_key, "trait_value": trait_value, "transient": true},
+                ],
+                "transient": false,
+            }));
+        then.status(200).json_body(identities_json);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let traits = vec![
+        SDKTrait::new(
+            trait_key.to_string(),
+            FlagsmithValue {
+                value: trait_value.to_string(),
+                value_type: FlagsmithValueType::String,
+            },
+        ),
+        SDKTrait::new_with_transient(
+            transient_trait_key.to_string(),
+            FlagsmithValue {
+                value: trait_value.to_string(),
+                value_type: FlagsmithValueType::String,
+            },
+            true,
+        ),
+    ];
+    flagsmith
+        .get_identity_flags(identifier, Some(traits), None)
+        .unwrap()
+        .all_flags();
+
+    // Then
+    api_mock.assert();
+}
+
+#[rstest]
+fn test_get_identity_flags_calls_api_when_no_local_environment_with_transient_identity(
+    mock_server: MockServer,
+    identities_json: serde_json::Value,
+) {
+    // Given
+    let identifier = "test_identity";
+    let trait_key = "trait_key1";
+    let trait_value = "trai_value1";
+
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/identities/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({
+                "identifier": identifier,
+                "traits": [{"trait_key":trait_key, "trait_value": trait_value, "transient": false}],
+                "transient": true,
+            }));
+        then.status(200).json_body(identities_json);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let traits = vec![SDKTrait::new(
+        trait_key.to_string(),
+        FlagsmithValue {
+            value: trait_value.to_string(),
+            value_type: FlagsmithValueType::String,
+        },
+    )];
+    flagsmith
+        .get_identity_flags(identifier, Some(traits), Some(true))
+        .unwrap()
+        .all_flags();
+
+    // Then
+    api_mock.assert();
+}
+
 
 #[rstest]
 fn test_default_flag_is_not_used_when_environment_flags_returned(
@@ -414,7 +524,8 @@ fn test_default_flag_is_not_used_when_identity_flags_returned(
             .header("X-Environment-Key", ENVIRONMENT_KEY)
             .json_body(serde_json::json!({
                 "identifier": identifier,
-                "traits": []
+                "traits": [],
+                "transient": false,
             }));
         then.status(200).json_body(identities_json);
     });
@@ -427,7 +538,9 @@ fn test_default_flag_is_not_used_when_identity_flags_returned(
     let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
 
     // When
-    let flags = flagsmith.get_identity_flags(identifier, None).unwrap();
+    let flags = flagsmith
+        .get_identity_flags(identifier, None, None)
+        .unwrap();
     let flag = flags.get_flag(fixtures::FEATURE_1_NAME).unwrap();
     // Then
     assert_eq!(flag.feature_name, fixtures::FEATURE_1_NAME);
@@ -455,7 +568,8 @@ fn test_default_flag_is_used_when_no_matching_identity_flags_returned(
             .header("X-Environment-Key", ENVIRONMENT_KEY)
             .json_body(serde_json::json!({
                 "identifier": identifier,
-                "traits": []
+                "traits": [],
+                "transient": false,
             }));
         then.status(200).json_body(identities_json);
     });
@@ -468,7 +582,9 @@ fn test_default_flag_is_used_when_no_matching_identity_flags_returned(
     let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
 
     // When
-    let flags = flagsmith.get_identity_flags(identifier, None).unwrap();
+    let flags = flagsmith
+        .get_identity_flags(identifier, None, None)
+        .unwrap();
     let flag = flags.get_flag("feature_that_does_not_exists").unwrap();
     // Then
     assert_eq!(flag.is_default, true);
@@ -526,7 +642,8 @@ fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_i
             .header("X-Environment-Key", ENVIRONMENT_KEY)
             .json_body(serde_json::json!({
                 "identifier": identifier,
-                "traits": []
+                "traits": [],
+                "transient": false,
             }));
         then.status(200).json_body({});
     });
@@ -539,7 +656,9 @@ fn test_default_flags_are_used_if_api_error_and_default_flag_handler_given_for_i
     let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
 
     // When
-    let flags = flagsmith.get_identity_flags(identifier, None).unwrap();
+    let flags = flagsmith
+        .get_identity_flags(identifier, None, None)
+        .unwrap();
     let flag = flags.get_flag("feature_that_does_not_exists").unwrap();
     // Then
     assert_eq!(flag.is_default, true);

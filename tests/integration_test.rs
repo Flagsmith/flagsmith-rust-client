@@ -343,7 +343,7 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_with_transient_tr
     // Given
     let identifier = "test_identity";
     let trait_key = "trait_key1";
-    let trait_value = "trai_value1";
+    let trait_value = "trait_value1";
     let transient_trait_key = "trait_key2";
 
     let api_mock = mock_server.mock(|when, then| {

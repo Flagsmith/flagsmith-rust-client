@@ -1,7 +1,9 @@
 use crate::flagsmith::analytics::AnalyticsProcessor;
 use core::f64;
 use flagsmith_flag_engine::features::FeatureState;
+use flagsmith_flag_engine::identities::Trait;
 use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::error;
@@ -152,6 +154,44 @@ impl Flags {
                     "API returned invalid response".to_string(),
                 )),
             },
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SDKTrait {
+    pub trait_key: String,
+    pub trait_value: FlagsmithValue,
+    #[serde(default)]
+    pub transient: bool,
+}
+
+impl SDKTrait {
+    pub fn new(trait_key: String, trait_value: FlagsmithValue) -> SDKTrait {
+        return SDKTrait {
+            trait_key: trait_key,
+            trait_value: trait_value,
+            transient: Default::default(),
+        };
+    }
+    pub fn new_with_transient(
+        trait_key: String,
+        trait_value: FlagsmithValue,
+        transient: bool,
+    ) -> Self {
+        return SDKTrait {
+            trait_key: trait_key,
+            trait_value: trait_value,
+            transient: transient,
+        };
+    }
+}
+
+impl From<SDKTrait> for Trait {
+    fn from(t: SDKTrait) -> Self {
+        Self {
+            trait_key: t.trait_key,
+            trait_value: t.trait_value,
         }
     }
 }

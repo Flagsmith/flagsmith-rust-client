@@ -8,6 +8,7 @@ use flagsmith_flag_engine::identities::{Identity, Trait};
 use flagsmith_flag_engine::segments::evaluator::get_identity_segments;
 use flagsmith_flag_engine::segments::Segment;
 use log::debug;
+use models::SDKTrait;
 use reqwest::header::{self, HeaderMap};
 use serde_json::json;
 use std::collections::HashMap;
@@ -195,15 +196,26 @@ impl Flagsmith {
     pub fn get_identity_flags(
         &self,
         identifier: &str,
-        traits: Option<Vec<Trait>>,
+        traits: Option<Vec<SDKTrait>>,
+        transient: Option<bool>,
     ) -> Result<Flags, error::Error> {
         let data = self.datastore.lock().unwrap();
         let traits = traits.unwrap_or(vec![]);
         if data.environment.is_some() {
             let environment = data.environment.as_ref().unwrap();
-            return self.get_identity_flags_from_document(environment, &data.identities_with_overrides_by_identifier, identifier, traits);
+            let engine_traits: Vec<Trait> = traits.into_iter().map(|t| t.into()).collect();
+            return self.get_identity_flags_from_document(
+                environment,
+                &data.identities_with_overrides_by_identifier,
+                identifier,
+                engine_traits,
+            );
         }
-        return self.default_handler_if_err(self.get_identity_flags_from_api(identifier, traits));
+        return self.default_handler_if_err(self.get_identity_flags_from_api(
+            identifier,
+            traits,
+            transient.unwrap_or(false),
+        ));
     }
     // Returns a list of segments that the given identity is part of
     pub fn get_identity_segments(
@@ -298,11 +310,12 @@ impl Flagsmith {
     fn get_identity_flags_from_api(
         &self,
         identifier: &str,
-        traits: Vec<Trait>,
+        traits: Vec<SDKTrait>,
+        transient: bool,
     ) -> Result<Flags, error::Error> {
         let method = reqwest::Method::POST;
 
-        let json = json!({"identifier":identifier, "traits": traits});
+        let json = json!({"identifier":identifier, "traits": traits, "transient": transient});
         let response = get_json_response(
             &self.client,
             method,
@@ -586,7 +599,7 @@ mod tests {
 
         // Then
         let flags = _flagsmith.get_environment_flags();
-        let identity_flags = _flagsmith.get_identity_flags("overridden-id", None);
+        let identity_flags = _flagsmith.get_identity_flags("overridden-id", None, None);
         assert_eq!(flags.unwrap().get_feature_value_as_string("some_feature").unwrap().to_owned(), "some-value");
         assert_eq!(identity_flags.unwrap().get_feature_value_as_string("some_feature").unwrap().to_owned(), "some-overridden-value");
     }

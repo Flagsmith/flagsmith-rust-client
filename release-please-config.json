@@ -2,7 +2,7 @@
     "bootstrap-sha": "31732d15651aefbd4742c7d9fbe6d17b8d23df56",
     "packages": {
         ".": {
-            "release-type": "python",
+            "release-type": "rust",
             "changelog-path": "CHANGELOG.md",
             "bump-minor-pre-major": false,
             "bump-patch-for-minor-pre-major": false,

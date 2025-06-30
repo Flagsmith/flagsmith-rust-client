@@ -2,8 +2,6 @@
 [![Docs](https://docs.rs/bullettrain/badge.svg)](https://docs.rs/flagsmith/)
 [![Rust](https://github.com/Flagsmith/flagsmith-rust-client/workflows/Rust/badge.svg)](https://github.com/Flagsmith/flagsmith-rust-client/actions?query=workflow%3ARust)
 
-![Flagsmith Screenshot](https://github.com/Flagsmith/flagsmith/raw/main/static-files/hero.png)
-
 # Flagsmith Rust SDK
 
 > Flagsmith allows you to manage feature flags and remote config across multiple projects, environments and organisations.

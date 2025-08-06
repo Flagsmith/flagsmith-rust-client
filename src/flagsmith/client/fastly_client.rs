@@ -89,19 +89,27 @@ pub struct FastlyClient {
 }
 
 impl ClientLike for FastlyClient {
-    fn new(headers: HeaderMap, timeout: std::time::Duration) -> Self {
+    fn new(headers: HeaderMap, _timeout: std::time::Duration) -> Self {
         Self {
             default_headers: headers,
         }
     }
 
     fn request(&self, method: super::client::Method, url: String) -> impl ClientRequestBuilder {
+        let mut req = http::Request::new(
+            <flagsmith::client::client::Method as Into<http::Method>>::into(method),
+            url,
+        );
+
+        for (name, value) in &self.default_headers {
+            if let Ok(header_val) = value.to_str() {
+                req.append_header(name.to_string(), header_val);
+            }
+        }
+
         FastlyRequestBuilder {
             backend: "flagsmith".to_string(),
-            request: Ok(http::Request::new(
-                <flagsmith::client::client::Method as Into<http::Method>>::into(method),
-                url,
-            )),
+            request: Ok(req),
         }
     }
 }

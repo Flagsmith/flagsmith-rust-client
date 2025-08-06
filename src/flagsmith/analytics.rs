@@ -23,11 +23,6 @@ impl AnalyticsProcessor {
         timer: Option<u64>,
     ) -> Self {
         let (tx, rx) = flume::unbounded();
-        // let client = reqwest::blocking::Client::builder()
-        //     .default_headers(headers)
-        //     .timeout(timeout)
-        //     .build()
-        //     .unwrap();
         let client = SafeClient::new(headers.clone(), timeout);
 
         let analytics_endpoint = format!("{}analytics/flags/", api_url);

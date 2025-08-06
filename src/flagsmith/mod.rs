@@ -1,3 +1,7 @@
+use crate::flagsmith::client::client::{
+    ClientLike, ClientRequestBuilder, ClientResponse, Method, ResponseStatusCode, SafeClient,
+};
+
 use self::analytics::AnalyticsProcessor;
 use self::models::{Flag, Flags};
 use super::error;
@@ -16,7 +20,13 @@ use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
 
+#[cfg(all(feature = "non_blocking", feature = "default"))]
+compile_error!(
+    "feature \"non_blocking\" and feature \"default\" cannot be enabled at the same time"
+);
+
 mod analytics;
+mod client;
 
 pub mod models;
 pub mod offline_handler;
@@ -52,7 +62,7 @@ impl Default for FlagsmithOptions {
 }
 
 pub struct Flagsmith {
-    client: reqwest::blocking::Client,
+    client: SafeClient,
     environment_flags_url: String,
     identities_url: String,
     environment_url: String,
@@ -76,11 +86,7 @@ impl Flagsmith {
         );
         headers.insert("Content-Type", "application/json".parse().unwrap());
         let timeout = Duration::from_secs(flagsmith_options.request_timeout_seconds);
-        let client = reqwest::blocking::Client::builder()
-            .default_headers(headers.clone())
-            .timeout(timeout)
-            .build()
-            .unwrap();
+        let client = SafeClient::new(headers.clone(), timeout);
 
         let environment_flags_url = format!("{}flags/", flagsmith_options.api_url);
         let identities_url = format!("{}identities/", flagsmith_options.api_url);
@@ -112,7 +118,10 @@ impl Flagsmith {
 
         // Put the environment model behind mutex to
         // to share it safely between threads
-        let ds = Arc::new(Mutex::new(DataStore { environment: None, identities_with_overrides_by_identifier: HashMap::new() }));
+        let ds = Arc::new(Mutex::new(DataStore {
+            environment: None,
+            identities_with_overrides_by_identifier: HashMap::new(),
+        }));
         let (tx, rx) = mpsc::sync_channel::<u32>(1);
 
         let flagsmith = Flagsmith {
@@ -146,7 +155,7 @@ impl Flagsmith {
         if flagsmith.options.enable_local_evaluation {
             // Update environment once...
             update_environment(&client, &ds, &environment_url).unwrap();
-            
+
             // ...and continue updating in the background
             let ds = Arc::clone(&ds);
             thread::spawn(move || loop {
@@ -232,8 +241,12 @@ impl Flagsmith {
         }
         let environment = data.environment.as_ref().unwrap();
         let identities_with_overrides_by_identifier = &data.identities_with_overrides_by_identifier;
-        let identity_model =
-            self.get_identity_model(&environment, &identities_with_overrides_by_identifier, identifier, traits.clone().unwrap_or(vec![]))?;
+        let identity_model = self.get_identity_model(
+            &environment,
+            &identities_with_overrides_by_identifier,
+            identifier,
+            traits.clone().unwrap_or(vec![]),
+        )?;
         let segments = get_identity_segments(environment, &identity_model, traits.as_ref());
         return Ok(segments);
     }
@@ -277,7 +290,12 @@ impl Flagsmith {
         identifier: &str,
         traits: Vec<Trait>,
     ) -> Result<Flags, error::Error> {
-        let identity = self.get_identity_model(environment, identities_with_overrides_by_identifier, identifier, traits.clone())?;
+        let identity = self.get_identity_model(
+            environment,
+            identities_with_overrides_by_identifier,
+            identifier,
+            traits.clone(),
+        )?;
         let feature_states =
             engine::get_identity_feature_states(environment, &identity, Some(traits.as_ref()));
         let flags = Flags::from_feature_states(
@@ -299,13 +317,16 @@ impl Flagsmith {
         let mut identity: Identity;
 
         if identities_with_overrides_by_identifier.contains_key(identifier) {
-            identity = identities_with_overrides_by_identifier.get(identifier).unwrap().clone();
+            identity = identities_with_overrides_by_identifier
+                .get(identifier)
+                .unwrap()
+                .clone();
         } else {
             identity = Identity::new(identifier.to_string(), environment.api_key.clone());
         }
 
         identity.identity_traits = traits;
-        return Ok(identity.to_owned())
+        return Ok(identity.to_owned());
     }
     fn get_identity_flags_from_api(
         &self,
@@ -313,7 +334,7 @@ impl Flagsmith {
         traits: Vec<SDKTrait>,
         transient: bool,
     ) -> Result<Flags, error::Error> {
-        let method = reqwest::Method::POST;
+        let method = Method::POST;
 
         let json = json!({"identifier":identifier, "traits": traits, "transient": transient});
         let response = get_json_response(
@@ -340,7 +361,7 @@ impl Flagsmith {
         return Ok(flags);
     }
     fn get_environment_flags_from_api(&self) -> Result<Flags, error::Error> {
-        let method = reqwest::Method::GET;
+        let method = Method::GET;
         let api_flags = get_json_response(
             &self.client,
             method,
@@ -367,49 +388,47 @@ impl Flagsmith {
 }
 
 fn get_environment_from_api(
-    client: &reqwest::blocking::Client,
+    client: &SafeClient,
     environment_url: String,
 ) -> Result<Environment, error::Error> {
-    let method = reqwest::Method::GET;
+    let method = Method::GET;
     let json_document = get_json_response(client, method, environment_url, None)?;
     let environment = build_environment_struct(json_document);
     return Ok(environment);
 }
 
 fn update_environment(
-    client: &reqwest::blocking::Client,
+    client: &SafeClient,
     datastore: &Arc<Mutex<DataStore>>,
     environment_url: &String,
 ) -> Result<(), error::Error> {
     let mut data = datastore.lock().unwrap();
-    let environment = Some(get_environment_from_api(
-        &client,
-        environment_url.clone(),
-    )?);
+    let environment = Some(get_environment_from_api(&client, environment_url.clone())?);
     for identity in &environment.as_ref().unwrap().identity_overrides {
-        data.identities_with_overrides_by_identifier.insert(identity.identifier.clone(), identity.clone());
+        data.identities_with_overrides_by_identifier
+            .insert(identity.identifier.clone(), identity.clone());
     }
     data.environment = environment;
     return Ok(());
 }
 
 fn get_json_response(
-    client: &reqwest::blocking::Client,
-    method: reqwest::Method,
+    client: &SafeClient,
+    method: Method,
     url: String,
     body: Option<String>,
 ) -> Result<serde_json::Value, error::Error> {
-    let mut request = client.request(method, url);
+    let mut request = client.inner.request(method, url);
     if body.is_some() {
-        request = request.body(body.unwrap());
+        request = request.with_body(body.unwrap());
     };
-    let response = request.send()?;
+    let response = request.send().unwrap();
     if response.status().is_success() {
-        return Ok(response.json()?);
+        return Ok(response.json().unwrap());
     } else {
         return Err(error::Error::new(
             error::ErrorKind::FlagsmithAPIError,
-            response.text()?,
+            response.text().unwrap(),
         ));
     }
 }
@@ -600,7 +619,21 @@ mod tests {
         // Then
         let flags = _flagsmith.get_environment_flags();
         let identity_flags = _flagsmith.get_identity_flags("overridden-id", None, None);
-        assert_eq!(flags.unwrap().get_feature_value_as_string("some_feature").unwrap().to_owned(), "some-value");
-        assert_eq!(identity_flags.unwrap().get_feature_value_as_string("some_feature").unwrap().to_owned(), "some-overridden-value");
+        assert_eq!(
+            flags
+                .unwrap()
+                .get_feature_value_as_string("some_feature")
+                .unwrap()
+                .to_owned(),
+            "some-value"
+        );
+        assert_eq!(
+            identity_flags
+                .unwrap()
+                .get_feature_value_as_string("some_feature")
+                .unwrap()
+                .to_owned(),
+            "some-overridden-value"
+        );
     }
 }

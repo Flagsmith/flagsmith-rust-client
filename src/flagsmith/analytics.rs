@@ -5,6 +5,8 @@ use serde_json;
 use std::{collections::HashMap, thread};
 
 use std::sync::{Arc, RwLock};
+
+use crate::flagsmith::client::client::{ClientLike, ClientRequestBuilder, Method, SafeClient};
 static ANALYTICS_TIMER_IN_MILLI: u64 = 10 * 1000;
 
 #[derive(Clone, Debug)]
@@ -21,11 +23,13 @@ impl AnalyticsProcessor {
         timer: Option<u64>,
     ) -> Self {
         let (tx, rx) = flume::unbounded();
-        let client = reqwest::blocking::Client::builder()
-            .default_headers(headers)
-            .timeout(timeout)
-            .build()
-            .unwrap();
+        // let client = reqwest::blocking::Client::builder()
+        //     .default_headers(headers)
+        //     .timeout(timeout)
+        //     .build()
+        //     .unwrap();
+        let client = SafeClient::new(headers.clone(), timeout);
+
         let analytics_endpoint = format!("{}analytics/flags/", api_url);
         let timer = timer.unwrap_or(ANALYTICS_TIMER_IN_MILLI);
 
@@ -73,16 +77,16 @@ impl AnalyticsProcessor {
     }
 }
 
-fn flush(
-    client: &reqwest::blocking::Client,
-    analytics_data: &HashMap<String, u32>,
-    analytics_endpoint: &str,
-) {
+fn flush(client: &SafeClient, analytics_data: &HashMap<String, u32>, analytics_endpoint: &str) {
     if analytics_data.len() == 0 {
         return;
     }
     let body = serde_json::to_string(&analytics_data).unwrap();
-    let resp = client.post(analytics_endpoint).body(body).send();
+    let req = client
+        .inner
+        .request(Method::POST, analytics_endpoint.to_string())
+        .with_body(body);
+    let resp = req.send();
     if resp.is_err() {
         warn!("Failed to send analytics data");
     }

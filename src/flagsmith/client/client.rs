@@ -66,7 +66,7 @@ impl SafeClient {
     #[cfg(feature = "non_blocking")]
     pub fn new(headers: HeaderMap, timeout: Duration) -> Self {
         Self {
-            inner: FastlyClient::new(),
+            inner: FastlyClient::new(headers, timeout),
         }
     }
 }

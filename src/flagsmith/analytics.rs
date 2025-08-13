@@ -87,7 +87,7 @@ fn flush(client: &SafeClient, analytics_data: &HashMap<String, u32>, analytics_e
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use httpmock::prelude::*;

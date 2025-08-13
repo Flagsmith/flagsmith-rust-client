@@ -32,6 +32,10 @@ impl super::client::ResponseStatusCode for http::StatusCode {
 
         raw >= 200 && raw <= 299
     }
+
+    fn as_u16(&self) -> u16 {
+        self.as_u16()
+    }
 }
 
 impl super::client::ClientResponse for http::Response {
@@ -57,9 +61,9 @@ impl super::client::ClientResponse for http::Response {
 }
 
 /// Wrapper to help with abstraction of the client interface.
-struct FastlyRequestBuilder {
+pub struct FastlyRequestBuilder {
     backend: String,
-    request: Result<http::Request, ()>,
+    pub request: Result<http::Request, ()>,
 }
 
 impl ClientRequestBuilder for FastlyRequestBuilder {
@@ -111,5 +115,66 @@ impl ClientLike for FastlyClient {
             backend: "flagsmith".to_string(),
             request: Ok(req),
         }
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests {
+    use fastly::Response;
+    use serde::{Deserialize, Serialize};
+    use serde_json::json;
+
+    use super::*;
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    struct TestData {
+        key: String,
+    }
+
+    #[test]
+    fn test_status_code_is_success() {
+        let status = http::StatusCode::from_u16(199).unwrap();
+        assert!(!status.is_success());
+
+        let status = http::StatusCode::from_u16(300).unwrap();
+        assert!(!status.is_success());
+
+        for i in 200..=299 {
+            let status = http::StatusCode::from_u16(i).unwrap();
+
+            assert!(status.is_success(), "{} should be success", i);
+        }
+    }
+
+    #[test]
+    fn test_response_status_returns_status() {
+        let resp = Response::from_status(418);
+
+        assert_eq!(resp.status().as_u16(), 418);
+    }
+
+    #[test]
+    fn test_response_text_returns_body() {
+        let resp = Response::from_body("This is a test body.");
+
+        let text = resp.text();
+
+        assert!(text.is_ok());
+        assert_eq!(text.unwrap(), "This is a test body.");
+    }
+
+    #[test]
+    fn test_response_json_returns_body() {
+        let resp = Response::from_body(json!({ "key": "value" }).to_string());
+
+        let result = resp.json::<TestData>();
+
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            TestData {
+                key: "value".to_string()
+            }
+        );
     }
 }

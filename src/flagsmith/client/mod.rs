@@ -1,5 +1,5 @@
-#[cfg(not(feature = "non_blocking"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub mod blocking_client;
 pub mod client;
-#[cfg(feature = "non_blocking")]
+#[cfg(target_arch = "wasm32")]
 pub mod fastly_client;

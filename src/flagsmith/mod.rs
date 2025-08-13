@@ -20,10 +20,10 @@ use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
 
-#[cfg(all(feature = "non_blocking", feature = "default"))]
-compile_error!(
-    "feature \"non_blocking\" and feature \"default\" cannot be enabled at the same time"
-);
+// #[cfg(all(target_arch = "wasm32", feature = "default"))]
+// compile_error!(
+//     "feature \"non_blocking\" and feature \"default\" cannot be enabled at the same time"
+// );
 
 mod analytics;
 mod client;
@@ -433,7 +433,7 @@ fn get_json_response(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use httpmock::prelude::*;

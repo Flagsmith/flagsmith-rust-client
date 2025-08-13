@@ -32,6 +32,10 @@ impl ResponseStatusCode for reqwest::StatusCode {
     fn is_success(&self) -> bool {
         self.is_success()
     }
+
+    fn as_u16(&self) -> u16 {
+        self.as_u16()
+    }
 }
 
 impl ClientResponse for reqwest::blocking::Response {

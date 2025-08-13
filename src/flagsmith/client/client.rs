@@ -3,9 +3,9 @@ use std::time::Duration;
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 
-#[cfg(not(feature = "non_blocking"))]
+#[cfg(not(target_arch = "wasm32"))]
 use crate::flagsmith::client::blocking_client::BlockingClient;
-#[cfg(feature = "non_blocking")]
+#[cfg(target_arch = "wasm32")]
 use crate::flagsmith::client::fastly_client::FastlyClient;
 
 pub enum Method {
@@ -22,6 +22,10 @@ pub enum Method {
 
 pub trait ResponseStatusCode {
     fn is_success(&self) -> bool;
+
+    /// Exists for Unit Testing purposes
+    #[allow(dead_code)]
+    fn as_u16(&self) -> u16;
 }
 
 pub trait ClientRequestBuilder {
@@ -48,22 +52,22 @@ pub trait ClientLike {
 
 #[derive(Clone)]
 pub struct SafeClient {
-    #[cfg(not(feature = "non_blocking"))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub inner: BlockingClient,
 
-    #[cfg(feature = "non_blocking")]
+    #[cfg(target_arch = "wasm32")]
     pub inner: FastlyClient,
 }
 
 impl SafeClient {
-    #[cfg(not(feature = "non_blocking"))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(headers: HeaderMap, timeout: Duration) -> Self {
         Self {
             inner: BlockingClient::new(headers, timeout),
         }
     }
 
-    #[cfg(feature = "non_blocking")]
+    #[cfg(target_arch = "wasm32")]
     pub fn new(headers: HeaderMap, timeout: Duration) -> Self {
         Self {
             inner: FastlyClient::new(headers, timeout),

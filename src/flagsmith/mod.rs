@@ -20,11 +20,6 @@ use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
 
-// #[cfg(all(target_arch = "wasm32", feature = "default"))]
-// compile_error!(
-//     "feature \"non_blocking\" and feature \"default\" cannot be enabled at the same time"
-// );
-
 mod analytics;
 mod client;
 

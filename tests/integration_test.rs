@@ -1,3 +1,5 @@
+#![cfg(all(not(target_arch = "wasm32")))]
+
 use flagsmith::flagsmith::models::SDKTrait;
 use flagsmith::flagsmith::offline_handler;
 use flagsmith::{Flagsmith, FlagsmithOptions};
@@ -440,7 +442,6 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_with_transient_id
     // Then
     api_mock.assert();
 }
-
 
 #[rstest]
 fn test_default_flag_is_not_used_when_environment_flags_returned(

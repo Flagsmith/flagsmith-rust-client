@@ -1,3 +1,5 @@
+#![cfg(all(not(target_arch = "wasm32")))]
+
 use httpmock::prelude::*;
 use rstest::*;
 use serde_json;

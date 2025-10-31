@@ -23,6 +23,12 @@ pub mod offline_handler;
 
 const DEFAULT_API_URL: &str = "https://edge.api.flagsmith.com/api/v1/";
 
+// Get the SDK version from Cargo.toml at compile time, or default to "unknown"
+fn get_user_agent() -> String {
+    let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
+    format!("flagsmith-rust-sdk/{}", version)
+}
+
 pub struct FlagsmithOptions {
     pub api_url: String,
     pub custom_headers: HeaderMap,
@@ -75,6 +81,10 @@ impl Flagsmith {
             header::HeaderValue::from_str(&environment_key).unwrap(),
         );
         headers.insert("Content-Type", "application/json".parse().unwrap());
+        headers.insert(
+            header::USER_AGENT,
+            header::HeaderValue::from_str(&get_user_agent()).unwrap(),
+        );
         let timeout = Duration::from_secs(flagsmith_options.request_timeout_seconds);
         let client = reqwest::blocking::Client::builder()
             .default_headers(headers.clone())
@@ -511,6 +521,28 @@ mod tests {
     }
 
     #[test]
+    fn test_get_user_agent_format() {
+        // When
+        let user_agent = get_user_agent();
+
+        // Then
+        assert!(user_agent.starts_with("flagsmith-rust-sdk/"));
+
+        // Extract version part after the slash
+        let version = user_agent.strip_prefix("flagsmith-rust-sdk/").unwrap();
+
+        // During cargo test, CARGO_PKG_VERSION is always set, so we should never get "unknown"
+        assert_ne!(version, "unknown", "Version should not be 'unknown' during cargo test");
+
+        // Version should contain numbers (semantic versioning: e.g., "2.0.0")
+        assert!(
+            version.chars().any(|c| c.is_numeric()),
+            "Version should contain numbers, got: {}",
+            version
+        );
+    }
+
+    #[test]
     fn polling_thread_updates_environment_on_start() {
         // Given
         let environment_key = "ser.test_environment_key";
@@ -602,5 +634,39 @@ mod tests {
         let identity_flags = _flagsmith.get_identity_flags("overridden-id", None, None);
         assert_eq!(flags.unwrap().get_feature_value_as_string("some_feature").unwrap().to_owned(), "some-value");
         assert_eq!(identity_flags.unwrap().get_feature_value_as_string("some_feature").unwrap().to_owned(), "some-overridden-value");
+    }
+
+    #[test]
+    fn test_user_agent_header_is_set() {
+        // Given
+        let environment_key = "ser.test_environment_key";
+        let response_body: serde_json::Value = serde_json::from_str(ENVIRONMENT_JSON).unwrap();
+        let expected_user_agent = get_user_agent();
+
+        let mock_server = MockServer::start();
+        let api_mock = mock_server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/environment-document/")
+                .header("X-Environment-Key", environment_key)
+                .header("User-Agent", expected_user_agent.as_str());
+            then.status(200).json_body(response_body);
+        });
+
+        let url = mock_server.url("/api/v1/");
+
+        let flagsmith_options = FlagsmithOptions {
+            api_url: url,
+            enable_local_evaluation: true,
+            ..Default::default()
+        };
+
+        // When
+        let _flagsmith = Flagsmith::new(environment_key.to_string(), flagsmith_options);
+
+        // let's wait for the thread to make the request
+        thread::sleep(std::time::Duration::from_millis(50));
+
+        // Then
+        api_mock.assert();
     }
 }

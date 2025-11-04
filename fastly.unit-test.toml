@@ -1,0 +1,15 @@
+# This file describes a Fastly Compute@Edge package. To learn more visit:
+# https://developer.fastly.com/reference/fastly-toml/
+
+authors = [
+  "Gagan Trivedi <gagan.trivedi@flagsmith.com>",
+  "Kim Gustyr <kim.gustyr@flagsmith.com>",
+]
+description = "Flagsmith Rust Client."
+language = "rust"
+manifest_version = 2
+name = "flagsmith-rust-client"
+service_id = ""
+
+[scripts]
+build = "cargo build --release --target wasm32-wasip1 --color always"

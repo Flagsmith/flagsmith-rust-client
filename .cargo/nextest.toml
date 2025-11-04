@@ -1,0 +1,2 @@
+[profile.default]
+platform = { target_arch = "wasm32" }

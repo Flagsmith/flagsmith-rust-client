@@ -762,3 +762,29 @@ fn test_get_identity_segments_with_valid_trait(local_eval_flagsmith: Flagsmith) 
     assert_eq!(segments.len(), 1);
     assert_eq!(segments[0].name, "Test Segment");
 }
+
+#[rstest]
+fn test_get_identity_segments_filters_identity_override_segments(local_eval_flagsmith: Flagsmith) {
+    // Given - environment fixture includes identity override for "overridden-id"
+    // Use the overridden identity from the fixture
+    let identifier = "overridden-id";
+
+    // Test with traits that match the API segment (foo=bar)
+    let traits = vec![Trait {
+        trait_key: "foo".to_string(),
+        trait_value: FlagsmithValue {
+            value: "bar".to_string(),
+            value_type: FlagsmithValueType::String,
+        },
+    }];
+
+    // When
+    let segments = local_eval_flagsmith
+        .get_identity_segments(identifier, Some(traits))
+        .unwrap();
+
+    // Then - should only return API segments with source "api",
+    assert_eq!(segments.len(), 1, "Should only return API-sourced segments");
+    assert_eq!(segments[0].name, "Test Segment", "Should return the matching API segment");
+    assert_eq!(segments[0].id, 1, "Should have correct segment ID");
+}

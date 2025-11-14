@@ -1,5 +1,6 @@
 use crate::flagsmith::analytics::AnalyticsProcessor;
 use core::f64;
+use flagsmith_flag_engine::engine_eval::EvaluationResult;
 use flagsmith_flag_engine::features::FeatureState;
 use flagsmith_flag_engine::identities::Trait;
 use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
@@ -113,6 +114,30 @@ impl Flags {
             analytics_processor,
             default_flag_handler,
         });
+    }
+
+    pub fn from_evaluation_result(
+        result: &EvaluationResult,
+        analytics_processor: Option<AnalyticsProcessor>,
+        default_flag_handler: Option<fn(&str) -> Flag>,
+        _identity_id: Option<&str>,
+    ) -> Flags {
+        let mut flags: HashMap<String, Flag> = HashMap::new();
+        for (feature_name, flag_result) in &result.flags {
+            let flag = Flag {
+                feature_name: flag_result.name.clone(),
+                is_default: false,
+                enabled: flag_result.enabled,
+                value: flag_result.value.clone(),
+                feature_id: flag_result.metadata.feature_id,
+            };
+            flags.insert(feature_name.clone(), flag);
+        }
+        return Flags {
+            flags,
+            analytics_processor,
+            default_flag_handler,
+        };
     }
 
     // Returns a vector of all `Flag` structs

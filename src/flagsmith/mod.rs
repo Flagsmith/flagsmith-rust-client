@@ -258,14 +258,10 @@ impl Flagsmith {
         let eval_context = data.evaluation_context.as_ref().unwrap();
         let traits = traits.unwrap_or(vec![]);
 
-        // Add identity to context
         let context_with_identity = add_identity_to_context(eval_context, identifier, &traits);
 
-        // Evaluate
         let result = get_evaluation_result(&context_with_identity);
 
-        // Extract segments from result - convert SegmentResult to Segment
-        // Only return segments with source "api"
         let segments: Vec<Segment> = result
             .segments
             .iter()
@@ -328,10 +324,8 @@ impl Flagsmith {
         identifier: &str,
         traits: Vec<Trait>,
     ) -> Result<Flags, error::Error> {
-        // Add identity data to context
         let context_with_identity = add_identity_to_context(eval_context, identifier, &traits);
 
-        // Evaluate
         let result = get_evaluation_result(&context_with_identity);
 
         let flags = Flags::from_evaluation_result(
@@ -421,7 +415,7 @@ fn update_environment(
         &client,
         environment_url.clone(),
     )?);
-    // Create evaluation context from environment
+
     let eval_context = environment_to_context(environment.as_ref().unwrap().clone());
     data.evaluation_context = Some(eval_context);
 

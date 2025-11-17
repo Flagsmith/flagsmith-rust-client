@@ -110,6 +110,9 @@ impl Flagsmith {
         {
             panic!("offline_handler cannot be used with local evaluation")
         }
+        if flagsmith_options.enable_local_evaluation && !environment_key.starts_with("ser.") {
+            panic!("In order to use local evaluation, please use a server-side environment key (starts with 'ser.')")
+        }
 
         // Initialize analytics processor
         let analytics_processor = match flagsmith_options.enable_analytics {
@@ -164,8 +167,10 @@ impl Flagsmith {
 
         if flagsmith.options.enable_local_evaluation {
             // Update environment once...
-            update_environment(&client, &ds, &environment_url).unwrap();
-            
+            if let Err(e) = update_environment(&client, &ds, &environment_url) {
+                log::warn!("Failed to fetch environment on initialization: {}. Will retry in background.", e);
+            }
+
             // ...and continue updating in the background
             let ds = Arc::clone(&ds);
             thread::spawn(move || loop {
@@ -177,7 +182,9 @@ impl Flagsmith {
                     Err(TryRecvError::Empty) => {}
                 }
                 thread::sleep(Duration::from_millis(environment_refresh_interval_mills));
-                update_environment(&client, &ds, &environment_url).unwrap();
+                if let Err(e) = update_environment(&client, &ds, &environment_url) {
+                    log::warn!("Failed to update environment: {}. Will retry on next interval.", e);
+                }
             });
         }
         return flagsmith;

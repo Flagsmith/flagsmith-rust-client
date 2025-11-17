@@ -120,7 +120,6 @@ impl Flags {
         result: &EvaluationResult,
         analytics_processor: Option<AnalyticsProcessor>,
         default_flag_handler: Option<fn(&str) -> Flag>,
-        _identity_id: Option<&str>,
     ) -> Flags {
         let mut flags: HashMap<String, Flag> = HashMap::new();
         for (feature_name, flag_result) in &result.flags {
@@ -249,7 +248,7 @@ mod tests {
     fn can_create_flag_from_feature_state() {
         // Given
         let feature_state: FeatureState =
-            serde_json::from_str(FEATURE_STATE_JSON_STRING.clone()).unwrap();
+            serde_json::from_str(FEATURE_STATE_JSON_STRING).unwrap();
         // When
         let flag = Flag::from_feature_state(feature_state.clone(), None);
         // Then

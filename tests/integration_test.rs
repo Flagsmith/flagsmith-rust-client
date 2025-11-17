@@ -11,11 +11,13 @@ mod fixtures;
 
 use fixtures::default_flag_handler;
 use fixtures::environment_json;
+use fixtures::environment_json_with_context_value_override;
 use fixtures::flags_json;
 use fixtures::identities_json;
 use fixtures::local_eval_flagsmith;
 use fixtures::mock_server;
 use fixtures::ENVIRONMENT_KEY;
+use fixtures::SEGMENT_OVERRIDE_VALUE;
 
 #[rstest]
 #[should_panic(expected = "default_flag_handler cannot be used with offline_handler")]
@@ -86,6 +88,38 @@ fn test_get_environment_flags_uses_local_environment_when_available(
         all_flags[0].value_as_string().unwrap(),
         fixtures::FEATURE_1_STR_VALUE
     );
+    api_mock.assert();
+}
+
+#[rstest]
+fn test_get_environment_flags_ignores_segment_overrides(
+    mock_server: MockServer,
+    environment_json_with_context_value_override: serde_json::Value,
+) {
+    // Given: a document with a segment override that would match the environment
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/environment-document/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(200)
+            .json_body(environment_json_with_context_value_override);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        enable_local_evaluation: true,
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let flags = flagsmith.get_environment_flags().unwrap();
+    let flag_value = flags
+        .get_feature_value_as_string(fixtures::FEATURE_1_NAME)
+        .unwrap();
+
+    // Then: should return environment default value
+    assert_eq!(flag_value, fixtures::FEATURE_1_STR_VALUE);
     api_mock.assert();
 }
 

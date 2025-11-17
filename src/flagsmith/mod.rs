@@ -1,11 +1,13 @@
 use self::analytics::AnalyticsProcessor;
 use self::models::{Flag, Flags};
 use super::error;
-use flagsmith_flag_engine::engine;
+use flagsmith_flag_engine::engine::get_evaluation_result;
+use flagsmith_flag_engine::engine_eval::{
+    add_identity_to_context, environment_to_context, EngineEvaluationContext, SegmentSource,
+};
 use flagsmith_flag_engine::environments::builders::build_environment_struct;
 use flagsmith_flag_engine::environments::Environment;
-use flagsmith_flag_engine::identities::{Identity, Trait};
-use flagsmith_flag_engine::segments::evaluator::get_identity_segments;
+use flagsmith_flag_engine::identities::Trait;
 use flagsmith_flag_engine::segments::Segment;
 use log::debug;
 use models::SDKTrait;
@@ -70,7 +72,7 @@ pub struct Flagsmith {
 
 struct DataStore {
     environment: Option<Environment>,
-    identities_with_overrides_by_identifier: HashMap<String, Identity>,
+    evaluation_context: Option<EngineEvaluationContext>,
 }
 
 impl Flagsmith {
@@ -122,7 +124,10 @@ impl Flagsmith {
 
         // Put the environment model behind mutex to
         // to share it safely between threads
-        let ds = Arc::new(Mutex::new(DataStore { environment: None, identities_with_overrides_by_identifier: HashMap::new() }));
+        let ds = Arc::new(Mutex::new(DataStore {
+            environment: None,
+            evaluation_context: None,
+        }));
         let (tx, rx) = mpsc::sync_channel::<u32>(1);
 
         let flagsmith = Flagsmith {
@@ -138,14 +143,18 @@ impl Flagsmith {
 
         if flagsmith.options.offline_handler.is_some() {
             let mut data = flagsmith.datastore.lock().unwrap();
-            data.environment = Some(
-                flagsmith
-                    .options
-                    .offline_handler
-                    .as_ref()
-                    .unwrap()
-                    .get_environment(),
-            )
+            let environment = flagsmith
+                .options
+                .offline_handler
+                .as_ref()
+                .unwrap()
+                .get_environment();
+
+            // Create evaluation context from offline environment
+            let eval_context = environment_to_context(environment.clone());
+            data.evaluation_context = Some(eval_context);
+
+            data.environment = Some(environment);
         }
 
         // Create a thread to update environment document
@@ -176,9 +185,9 @@ impl Flagsmith {
     //Returns `Flags` struct holding all the flags for the current environment.
     pub fn get_environment_flags(&self) -> Result<models::Flags, error::Error> {
         let data = self.datastore.lock().unwrap();
-        if data.environment.is_some() {
-            let environment = data.environment.as_ref().unwrap();
-            return Ok(self.get_environment_flags_from_document(environment));
+        if data.evaluation_context.is_some() {
+            let eval_context = data.evaluation_context.as_ref().unwrap();
+            return Ok(self.get_environment_flags_from_document(eval_context));
         }
         return self.default_handler_if_err(self.get_environment_flags_from_api());
     }
@@ -211,12 +220,11 @@ impl Flagsmith {
     ) -> Result<Flags, error::Error> {
         let data = self.datastore.lock().unwrap();
         let traits = traits.unwrap_or(vec![]);
-        if data.environment.is_some() {
-            let environment = data.environment.as_ref().unwrap();
+        if data.evaluation_context.is_some() {
+            let eval_context = data.evaluation_context.as_ref().unwrap();
             let engine_traits: Vec<Trait> = traits.into_iter().map(|t| t.into()).collect();
             return self.get_identity_flags_from_document(
-                environment,
-                &data.identities_with_overrides_by_identifier,
+                eval_context,
                 identifier,
                 engine_traits,
             );
@@ -234,17 +242,37 @@ impl Flagsmith {
         traits: Option<Vec<Trait>>,
     ) -> Result<Vec<Segment>, error::Error> {
         let data = self.datastore.lock().unwrap();
-        if data.environment.is_none() {
+        if data.evaluation_context.is_none() {
             return Err(error::Error::new(
                 error::ErrorKind::FlagsmithClientError,
                 "Local evaluation required to obtain identity segments.".to_string(),
             ));
         }
-        let environment = data.environment.as_ref().unwrap();
-        let identities_with_overrides_by_identifier = &data.identities_with_overrides_by_identifier;
-        let identity_model =
-            self.get_identity_model(&environment, &identities_with_overrides_by_identifier, identifier, traits.clone().unwrap_or(vec![]))?;
-        let segments = get_identity_segments(environment, &identity_model, traits.as_ref());
+        let eval_context = data.evaluation_context.as_ref().unwrap();
+        let traits = traits.unwrap_or(vec![]);
+
+        // Add identity to context
+        let context_with_identity = add_identity_to_context(eval_context, identifier, &traits);
+
+        // Evaluate
+        let result = get_evaluation_result(&context_with_identity);
+
+        // Extract segments from result - convert SegmentResult to Segment
+        // Only return segments with source "api"
+        let segments: Vec<Segment> = result
+            .segments
+            .iter()
+            .filter(|seg_result| {
+                seg_result.metadata.source == SegmentSource::Api
+            })
+            .map(|seg_result| Segment {
+                id: seg_result.metadata.segment_id.unwrap_or(0) as u32,
+                name: seg_result.name.clone(),
+                rules: vec![],
+                feature_states: vec![],
+            })
+            .collect();
+
         return Ok(segments);
     }
 
@@ -268,12 +296,19 @@ impl Flagsmith {
             }
         }
     }
-    fn get_environment_flags_from_document(&self, environment: &Environment) -> models::Flags {
-        return models::Flags::from_feature_states(
-            &environment.feature_states,
+    fn get_environment_flags_from_document(&self, eval_context: &EngineEvaluationContext) -> models::Flags {
+        // Clear segments and identity for environment evaluation
+        let environment_eval_ctx = EngineEvaluationContext {
+            environment: eval_context.environment.clone(),
+            features: eval_context.features.clone(),
+            segments: HashMap::new(),
+            identity: None,
+        };
+        let result = get_evaluation_result(&environment_eval_ctx);
+        return models::Flags::from_evaluation_result(
+            &result,
             self.analytics_processor.clone(),
             self.options.default_flag_handler,
-            None,
         );
     }
     pub fn update_environment(&mut self) -> Result<(), error::Error> {
@@ -282,41 +317,24 @@ impl Flagsmith {
 
     fn get_identity_flags_from_document(
         &self,
-        environment: &Environment,
-        identities_with_overrides_by_identifier: &HashMap<String, Identity>,
+        eval_context: &EngineEvaluationContext,
         identifier: &str,
         traits: Vec<Trait>,
     ) -> Result<Flags, error::Error> {
-        let identity = self.get_identity_model(environment, identities_with_overrides_by_identifier, identifier, traits.clone())?;
-        let feature_states =
-            engine::get_identity_feature_states(environment, &identity, Some(traits.as_ref()));
-        let flags = Flags::from_feature_states(
-            &feature_states,
+        // Add identity data to context
+        let context_with_identity = add_identity_to_context(eval_context, identifier, &traits);
+
+        // Evaluate
+        let result = get_evaluation_result(&context_with_identity);
+
+        let flags = Flags::from_evaluation_result(
+            &result,
             self.analytics_processor.clone(),
             self.options.default_flag_handler,
-            Some(&identity.composite_key()),
         );
         return Ok(flags);
     }
 
-    fn get_identity_model(
-        &self,
-        environment: &Environment,
-        identities_with_overrides_by_identifier: &HashMap<String, Identity>,
-        identifier: &str,
-        traits: Vec<Trait>,
-    ) -> Result<Identity, error::Error> {
-        let mut identity: Identity;
-
-        if identities_with_overrides_by_identifier.contains_key(identifier) {
-            identity = identities_with_overrides_by_identifier.get(identifier).unwrap().clone();
-        } else {
-            identity = Identity::new(identifier.to_string(), environment.api_key.clone());
-        }
-
-        identity.identity_traits = traits;
-        return Ok(identity.to_owned())
-    }
     fn get_identity_flags_from_api(
         &self,
         identifier: &str,
@@ -396,9 +414,10 @@ fn update_environment(
         &client,
         environment_url.clone(),
     )?);
-    for identity in &environment.as_ref().unwrap().identity_overrides {
-        data.identities_with_overrides_by_identifier.insert(identity.identifier.clone(), identity.clone());
-    }
+    // Create evaluation context from environment
+    let eval_context = environment_to_context(environment.as_ref().unwrap().clone());
+    data.evaluation_context = Some(eval_context);
+
     data.environment = environment;
     return Ok(());
 }

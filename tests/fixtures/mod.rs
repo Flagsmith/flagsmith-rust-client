@@ -6,69 +6,81 @@ use flagsmith::{Flagsmith, FlagsmithOptions};
 pub static FEATURE_1_NAME: &str = "feature_1";
 pub static FEATURE_1_ID: u32 = 1;
 pub static FEATURE_1_STR_VALUE: &str = "some_value";
+pub static SEGMENT_OVERRIDE_VALUE: &str = "segment_override";
 pub static DEFAULT_FLAG_HANDLER_FLAG_VALUE: &str = "default_flag_handler_flag_value";
 
 pub const ENVIRONMENT_KEY: &str = "ser.test_environment_key";
 
 #[fixture]
 pub fn environment_json() -> serde_json::Value {
+    let json_str = include_str!("environment.json");
+    serde_json::from_str(json_str).unwrap()
+}
+
+#[fixture]
+pub fn environment_json_with_context_value_override() -> serde_json::Value {
     serde_json::json!({
-            "api_key": "B62qaMZNwfiqT76p38ggrQ",
-            "project": {
-                "name": "Test project",
-                "organisation": {
-                    "feature_analytics": false,
-                    "name": "Test Org",
-                    "id": 1,
-                    "persist_trait_data": true,
-                    "stop_serving_flags": false
-                },
+        "api_key": "B62qaMZNwfiqT76p38ggrQ",
+        "name": "Test Environment",
+        "updated_at": "2023-12-06T10:21:54.079725Z",
+        "project": {
+            "name": "Test project",
+            "organisation": {
+                "feature_analytics": false,
+                "name": "Test Org",
                 "id": 1,
-                "hide_disabled_flags": false,
-                "segments": [
-                    {
-                        "id": 1,
-                        "name": "Test Segment",
-                        "feature_states":[],
-                        "rules": [
-                            {
-                                "type": "ALL",
-                                "conditions": [],
-                                "rules": [
-                                    {
-                                        "type": "ALL",
-                                        "rules": [],
-                                        "conditions": [
-                                            {
-                                                "operator": "EQUAL",
-                                                "property_": "foo",
-                                                "value": "bar"
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
+                "persist_trait_data": true,
+                "stop_serving_flags": false
             },
-            "segment_overrides": [],
             "id": 1,
-            "feature_states": [
-                {
+            "hide_disabled_flags": false,
+            "segments": [{
+                "id": 1,
+                "name": "Test Segment",
+                "feature_states": [{
                     "multivariate_feature_state_values": [],
-                    "feature_state_value": FEATURE_1_STR_VALUE,
-                    "id": 1,
-                    "featurestate_uuid": "40eb539d-3713-4720-bbd4-829dbef10d51",
+                    "feature_state_value": SEGMENT_OVERRIDE_VALUE,
+                    "id": 2,
+                    "featurestate_uuid": "3b0b2736-d77c-4b88-9d70-4615d6ff55f1",
                     "feature": {
                         "name": FEATURE_1_NAME,
                         "type": "STANDARD",
                         "id": FEATURE_1_ID
                     },
-                    "segment_id": null,
+                    "segment_id": 1,
                     "enabled": true
-                }
-            ]
+                }],
+                "rules": [{
+                    "type": "ALL",
+                    "conditions": [],
+                    "rules": [{
+                        "type": "ALL",
+                        "rules": [],
+                        "conditions": [{
+                            "operator": "EQUAL",
+                            "property": "$.environment.name",
+                            "value": "Test Environment"
+                        }]
+                    }]
+                }]
+            }]
+        },
+        "segment_overrides": [],
+        "id": 1,
+        "feature_states": [{
+            "multivariate_feature_state_values": [],
+            "feature_state_value": FEATURE_1_STR_VALUE,
+            "id": 1,
+            "featurestate_uuid": "40eb539d-3713-4720-bbd4-829dbef10d51",
+            "feature": {
+                "name": FEATURE_1_NAME,
+                "type": "STANDARD",
+                "id": FEATURE_1_ID
+            },
+            "segment_id": null,
+            "enabled": true
+        }],
+        "identity_overrides": []
     })
 }
 

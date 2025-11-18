@@ -11,11 +11,13 @@ mod fixtures;
 
 use fixtures::default_flag_handler;
 use fixtures::environment_json;
+use fixtures::environment_json_with_context_value_override;
 use fixtures::flags_json;
 use fixtures::identities_json;
 use fixtures::local_eval_flagsmith;
 use fixtures::mock_server;
 use fixtures::ENVIRONMENT_KEY;
+use fixtures::SEGMENT_OVERRIDE_VALUE;
 
 #[rstest]
 #[should_panic(expected = "default_flag_handler cannot be used with offline_handler")]
@@ -86,6 +88,38 @@ fn test_get_environment_flags_uses_local_environment_when_available(
         all_flags[0].value_as_string().unwrap(),
         fixtures::FEATURE_1_STR_VALUE
     );
+    api_mock.assert();
+}
+
+#[rstest]
+fn test_get_environment_flags_ignores_segment_overrides(
+    mock_server: MockServer,
+    environment_json_with_context_value_override: serde_json::Value,
+) {
+    // Given: a document with a segment override that would match the environment
+    let api_mock = mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/environment-document/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(200)
+            .json_body(environment_json_with_context_value_override);
+    });
+    let url = mock_server.url("/api/v1/");
+    let flagsmith_options = FlagsmithOptions {
+        api_url: url,
+        enable_local_evaluation: true,
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let flags = flagsmith.get_environment_flags().unwrap();
+    let flag_value = flags
+        .get_feature_value_as_string(fixtures::FEATURE_1_NAME)
+        .unwrap();
+
+    // Then: should return environment default value
+    assert_eq!(flag_value, fixtures::FEATURE_1_STR_VALUE);
     api_mock.assert();
 }
 
@@ -761,4 +795,30 @@ fn test_get_identity_segments_with_valid_trait(local_eval_flagsmith: Flagsmith) 
     //Then
     assert_eq!(segments.len(), 1);
     assert_eq!(segments[0].name, "Test Segment");
+}
+
+#[rstest]
+fn test_get_identity_segments_filters_identity_override_segments(local_eval_flagsmith: Flagsmith) {
+    // Given - environment fixture includes identity override for "overridden-id"
+    // Use the overridden identity from the fixture
+    let identifier = "overridden-id";
+
+    // Test with traits that match the API segment (foo=bar)
+    let traits = vec![Trait {
+        trait_key: "foo".to_string(),
+        trait_value: FlagsmithValue {
+            value: "bar".to_string(),
+            value_type: FlagsmithValueType::String,
+        },
+    }];
+
+    // When
+    let segments = local_eval_flagsmith
+        .get_identity_segments(identifier, Some(traits))
+        .unwrap();
+
+    // Then - should only return API segments with source "api",
+    assert_eq!(segments.len(), 1, "Should only return API-sourced segments");
+    assert_eq!(segments[0].name, "Test Segment", "Should return the matching API segment");
+    assert_eq!(segments[0].id, 1, "Should have correct segment ID");
 }

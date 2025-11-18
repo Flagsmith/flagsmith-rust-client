@@ -1,4 +1,5 @@
 use std::convert::From;
+use std::error;
 use std::fmt;
 
 /// Wraps several types of errors.
@@ -25,11 +26,13 @@ impl Error{
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.kind {
-            ErrorKind::FlagsmithClientError => write!(f, "Flagsmith API error: {}", &self.msg),
-            ErrorKind::FlagsmithAPIError => write!(f, "Flagsmith client error: {}", &self.msg),
+            ErrorKind::FlagsmithClientError => write!(f, "Flagsmith client error: {}", &self.msg),
+            ErrorKind::FlagsmithAPIError => write!(f, "Flagsmith API error: {}", &self.msg),
         }
     }
 }
+
+impl error::Error for Error {}
 
 impl From<url::ParseError> for Error {
     fn from(e: url::ParseError) -> Self {

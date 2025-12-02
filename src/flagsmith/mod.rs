@@ -451,6 +451,7 @@ mod tests {
 
     static ENVIRONMENT_JSON: &str = r#"{
         "api_key": "B62qaMZNwfiqT76p38ggrQ",
+        "name": "Test Environment",
         "project": {
           "name": "Test project",
           "organisation": {

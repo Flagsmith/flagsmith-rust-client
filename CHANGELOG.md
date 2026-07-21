@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.1](https://github.com/Flagsmith/flagsmith-rust-client/compare/v2.1.0...v2.1.1) (2026-07-21)
+
+
+### CI
+
+* setup Renovate for flagsmith-flag-engine tracking ([#47](https://github.com/Flagsmith/flagsmith-rust-client/issues/47)) ([1d98fff](https://github.com/Flagsmith/flagsmith-rust-client/commit/1d98fff619deb2db51c53870099fa7feeb2da065))
+
+
+### Other
+
+* **deps:** bump flagsmith-flag-engine to 0.6 ([#48](https://github.com/Flagsmith/flagsmith-rust-client/issues/48)) ([fd04f5a](https://github.com/Flagsmith/flagsmith-rust-client/commit/fd04f5a498fb3dcf23bbcecd8636b1316e16e79e))
+* Remove amannn/action-semantic-pull-request workflow ([#44](https://github.com/Flagsmith/flagsmith-rust-client/issues/44)) ([c925c5d](https://github.com/Flagsmith/flagsmith-rust-client/commit/c925c5d43a813f7545b5f34d3db71238a6134e62))
+
 ## [2.1.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v2.0.0...v2.1.0) (2025-12-02)
 
 

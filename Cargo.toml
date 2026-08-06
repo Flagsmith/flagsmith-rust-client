@@ -10,13 +10,14 @@ repository = "https://github.com/Flagsmith/flagsmith-rust-client"
 readme = "README.md"
 categories = ["config", "api-bindings"]
 keywords = ["Flagsmith", "feature-flag", "remote-config"]
+rust-version = "1.85.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-reqwest = { version = "0.13", features = ["json", "blocking"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "blocking"] }
 url = "2.1"
 chrono = { version = "0.4" }
 log = "0.4"

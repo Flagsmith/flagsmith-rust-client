@@ -10,7 +10,6 @@ repository = "https://github.com/Flagsmith/flagsmith-rust-client"
 readme = "README.md"
 categories = ["config", "api-bindings"]
 keywords = ["Flagsmith", "feature-flag", "remote-config"]
-rust-version = "1.85.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

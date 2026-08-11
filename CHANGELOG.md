@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v2.1.1...v3.0.0) (2026-08-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* declare MSRV 1.86 and enforce it in CI ([#50](https://github.com/Flagsmith/flagsmith-rust-client/issues/50))
+
+### Features
+
+* declare MSRV 1.86 and enforce it in CI ([#50](https://github.com/Flagsmith/flagsmith-rust-client/issues/50)) ([294eb0c](https://github.com/Flagsmith/flagsmith-rust-client/commit/294eb0c902e5107adf1e17058c50f74e74067116))
+
 ## [2.1.1](https://github.com/Flagsmith/flagsmith-rust-client/compare/v2.1.0...v2.1.1) (2026-07-21)
 
 

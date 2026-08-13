@@ -2,6 +2,8 @@ use std::convert::From;
 use std::error;
 use std::fmt;
 
+use reqwest::StatusCode;
+
 /// Wraps several types of errors.
 #[derive(Debug)]
 pub struct Error {
@@ -20,6 +22,13 @@ impl Error{
         Error{
             kind,
             msg
+        }
+    }
+
+    pub fn http(status: StatusCode, body: String) -> Error {
+        Error {
+            kind: ErrorKind::FlagsmithAPIError,
+            msg: format!("HTTP Api error: {status}, {body}")
         }
     }
 }

@@ -60,3 +60,26 @@ impl  From<serde_json::Error> for Error {
         Error::new(ErrorKind::FlagsmithAPIError, e.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_http_error_includes_status_and_body() {
+        let error = Error::http(
+            StatusCode::BAD_GATEWAY,
+            "{\"detail\":\"upstream unavailable\"}".to_string(),
+        );
+
+        assert_eq!(error.kind, ErrorKind::FlagsmithAPIError);
+        assert_eq!(
+            error.msg,
+            "HTTP Api error: 502 Bad Gateway, {\"detail\":\"upstream unavailable\"}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "Flagsmith API error: HTTP Api error: 502 Bad Gateway, {\"detail\":\"upstream unavailable\"}"
+        );
+    }
+}

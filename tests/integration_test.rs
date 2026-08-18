@@ -713,7 +713,8 @@ fn test_flagsmith_api_error_is_returned_if_something_goes_wrong_with_the_request
         when.method(GET)
             .path("/api/v1/flags/")
             .header("X-Environment-Key", ENVIRONMENT_KEY);
-        then.status(502).json_body({}); // returning 502
+        then.status(502)
+            .json_body(serde_json::json!({"detail": "bad gateway"})); // returning 502
     });
     let url = mock_server.url("/api/v1/");
     let flagsmith_options = FlagsmithOptions {
@@ -724,7 +725,11 @@ fn test_flagsmith_api_error_is_returned_if_something_goes_wrong_with_the_request
 
     // When
     let err = flagsmith.get_environment_flags().err().unwrap();
+
+    // Then: the error carries the HTTP status and the response body
     assert_eq!(err.kind, flagsmith::error::ErrorKind::FlagsmithAPIError);
+    assert!(err.msg.contains("502 Bad Gateway"), "unexpected msg: {}", err.msg);
+    assert!(err.msg.contains("bad gateway"), "unexpected msg: {}", err.msg);
 }
 
 #[rstest]

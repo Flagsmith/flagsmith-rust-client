@@ -168,7 +168,10 @@ impl Flagsmith {
         if flagsmith.options.enable_local_evaluation {
             // Update environment once...
             if let Err(e) = update_environment(&client, &ds, &environment_url) {
-                log::warn!("Failed to fetch environment on initialization: {}. Will retry in background.", e);
+                log::warn!(
+                    "Failed to fetch environment on initialization: {}. Will retry in background.",
+                    e
+                );
             }
 
             // ...and continue updating in the background
@@ -183,7 +186,10 @@ impl Flagsmith {
                 }
                 thread::sleep(Duration::from_millis(environment_refresh_interval_mills));
                 if let Err(e) = update_environment(&client, &ds, &environment_url) {
-                    log::warn!("Failed to update environment: {}. Will retry on next interval.", e);
+                    log::warn!(
+                        "Failed to update environment: {}. Will retry on next interval.",
+                        e
+                    );
                 }
             });
         }
@@ -230,11 +236,7 @@ impl Flagsmith {
         if data.evaluation_context.is_some() {
             let eval_context = data.evaluation_context.as_ref().unwrap();
             let engine_traits: Vec<Trait> = traits.into_iter().map(|t| t.into()).collect();
-            return self.get_identity_flags_from_document(
-                eval_context,
-                identifier,
-                engine_traits,
-            );
+            return self.get_identity_flags_from_document(eval_context, identifier, engine_traits);
         }
         return self.default_handler_if_err(self.get_identity_flags_from_api(
             identifier,
@@ -265,9 +267,7 @@ impl Flagsmith {
         let segments: Vec<Segment> = result
             .segments
             .iter()
-            .filter(|seg_result| {
-                seg_result.metadata.source == SegmentSource::Api
-            })
+            .filter(|seg_result| seg_result.metadata.source == SegmentSource::Api)
             .map(|seg_result| Segment {
                 id: seg_result.metadata.segment_id.unwrap_or(0) as u32,
                 name: seg_result.name.clone(),
@@ -299,7 +299,10 @@ impl Flagsmith {
             }
         }
     }
-    fn get_environment_flags_from_document(&self, eval_context: &EngineEvaluationContext) -> models::Flags {
+    fn get_environment_flags_from_document(
+        &self,
+        eval_context: &EngineEvaluationContext,
+    ) -> models::Flags {
         // Clear segments and identity for environment evaluation
         let environment_eval_ctx = EngineEvaluationContext {
             environment: eval_context.environment.clone(),
@@ -411,10 +414,7 @@ fn update_environment(
     environment_url: &String,
 ) -> Result<(), error::Error> {
     let mut data = datastore.lock().unwrap();
-    let environment = Some(get_environment_from_api(
-        &client,
-        environment_url.clone(),
-    )?);
+    let environment = Some(get_environment_from_api(&client, environment_url.clone())?);
 
     let eval_context = environment_to_context(environment.as_ref().unwrap().clone());
     data.evaluation_context = Some(eval_context);
@@ -553,7 +553,10 @@ mod tests {
         let version = user_agent.strip_prefix("flagsmith-rust-sdk/").unwrap();
 
         // During cargo test, CARGO_PKG_VERSION is always set, so we should never get "unknown"
-        assert_ne!(version, "unknown", "Version should not be 'unknown' during cargo test");
+        assert_ne!(
+            version, "unknown",
+            "Version should not be 'unknown' during cargo test"
+        );
 
         // Version should contain numbers (semantic versioning: e.g., "2.0.0")
         assert!(
@@ -653,8 +656,22 @@ mod tests {
         // Then
         let flags = _flagsmith.get_environment_flags();
         let identity_flags = _flagsmith.get_identity_flags("overridden-id", None, None);
-        assert_eq!(flags.unwrap().get_feature_value_as_string("some_feature").unwrap().to_owned(), "some-value");
-        assert_eq!(identity_flags.unwrap().get_feature_value_as_string("some_feature").unwrap().to_owned(), "some-overridden-value");
+        assert_eq!(
+            flags
+                .unwrap()
+                .get_feature_value_as_string("some_feature")
+                .unwrap()
+                .to_owned(),
+            "some-value"
+        );
+        assert_eq!(
+            identity_flags
+                .unwrap()
+                .get_feature_value_as_string("some_feature")
+                .unwrap()
+                .to_owned(),
+            "some-overridden-value"
+        );
     }
 
     #[test]

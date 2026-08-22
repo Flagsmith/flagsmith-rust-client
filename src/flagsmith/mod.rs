@@ -434,13 +434,11 @@ fn get_json_response(
         request = request.body(body.unwrap());
     };
     let response = request.send()?;
-    if response.status().is_success() {
+    let status = response.status();
+    if status.is_success() {
         return Ok(response.json()?);
     } else {
-        return Err(error::Error::new(
-            error::ErrorKind::FlagsmithAPIError,
-            response.text()?,
-        ));
+        return Err(error::Error::http(status, response.text()?));
     }
 }
 

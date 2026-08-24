@@ -727,8 +727,16 @@ fn test_flagsmith_api_error_is_returned_if_something_goes_wrong_with_the_request
 
     // Then: the error carries the HTTP status and the response body
     assert_eq!(err.kind, flagsmith::error::ErrorKind::FlagsmithAPIError);
-    assert!(err.msg.contains("502 Bad Gateway"), "unexpected msg: {}", err.msg);
-    assert!(err.msg.contains("bad gateway"), "unexpected msg: {}", err.msg);
+    assert!(
+        err.msg.contains("502 Bad Gateway"),
+        "unexpected msg: {}",
+        err.msg
+    );
+    assert!(
+        err.msg.contains("bad gateway"),
+        "unexpected msg: {}",
+        err.msg
+    );
 }
 
 #[rstest]

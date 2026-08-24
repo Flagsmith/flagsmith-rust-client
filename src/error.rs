@@ -25,7 +25,7 @@ impl Error {
     pub fn http(status: StatusCode, body: String) -> Error {
         Error {
             kind: ErrorKind::FlagsmithAPIError,
-            msg: format!("HTTP Api error: {status}, {body}")
+            msg: format!("HTTP Api error: {status}, {body}"),
         }
     }
 }

@@ -475,7 +475,6 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_with_transient_id
     api_mock.assert();
 }
 
-
 #[rstest]
 fn test_default_flag_is_not_used_when_environment_flags_returned(
     mock_server: MockServer,
@@ -824,6 +823,9 @@ fn test_get_identity_segments_filters_identity_override_segments(local_eval_flag
 
     // Then - should only return API segments with source "api",
     assert_eq!(segments.len(), 1, "Should only return API-sourced segments");
-    assert_eq!(segments[0].name, "Test Segment", "Should return the matching API segment");
+    assert_eq!(
+        segments[0].name, "Test Segment",
+        "Should return the matching API segment"
+    );
     assert_eq!(segments[0].id, 1, "Should have correct segment ID");
 }

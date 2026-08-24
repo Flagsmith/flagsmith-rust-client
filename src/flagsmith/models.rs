@@ -247,8 +247,7 @@ mod tests {
     #[test]
     fn can_create_flag_from_feature_state() {
         // Given
-        let feature_state: FeatureState =
-            serde_json::from_str(FEATURE_STATE_JSON_STRING).unwrap();
+        let feature_state: FeatureState = serde_json::from_str(FEATURE_STATE_JSON_STRING).unwrap();
         // When
         let flag = Flag::from_feature_state(feature_state.clone(), None);
         // Then

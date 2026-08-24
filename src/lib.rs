@@ -1,4 +1,4 @@
-pub mod flagsmith;
 pub mod error;
-pub use crate::flagsmith::{Flagsmith, FlagsmithOptions};
+pub mod flagsmith;
 pub use crate::flagsmith::models::Flag;
+pub use crate::flagsmith::{Flagsmith, FlagsmithOptions};

@@ -17,12 +17,9 @@ pub enum ErrorKind {
     FlagsmithClientError,
     FlagsmithAPIError,
 }
-impl Error{
-    pub fn new(kind: ErrorKind, msg: String) -> Error{
-        Error{
-            kind,
-            msg
-        }
+impl Error {
+    pub fn new(kind: ErrorKind, msg: String) -> Error {
+        Error { kind, msg }
     }
 
     pub fn http(status: StatusCode, body: String) -> Error {
@@ -55,7 +52,7 @@ impl From<reqwest::Error> for Error {
     }
 }
 
-impl  From<serde_json::Error> for Error {
+impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
         Error::new(ErrorKind::FlagsmithAPIError, e.to_string())
     }

@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.1.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.0.0...v3.1.0) (2026-08-26)
+
+
+### Features
+
+* **ci:** add a format and msrv step ([#52](https://github.com/Flagsmith/flagsmith-rust-client/issues/52)) ([f646bd6](https://github.com/Flagsmith/flagsmith-rust-client/commit/f646bd65093e0ad0a9154034c6c1633d2023261f))
+
+
+### Bug Fixes
+
+* improve http error details ([#53](https://github.com/Flagsmith/flagsmith-rust-client/issues/53)) ([88d1c6b](https://github.com/Flagsmith/flagsmith-rust-client/commit/88d1c6bbf02db85cff93f1fa71b51a6307a13bd3))
+
 ## [3.0.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v2.1.1...v3.0.0) (2026-08-11)
 
 

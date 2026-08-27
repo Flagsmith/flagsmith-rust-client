@@ -38,26 +38,45 @@ impl AnalyticsProcessor {
             .spawn(move || {
                 let mut last_flushed = chrono::Utc::now();
                 loop {
-                    let data = rx.try_recv();
-                    let mut analytics_data = analytics_data_locked.write().unwrap();
-                    match data {
+                    // Block until either a feature is tracked or the next flush is due
+                    let elapsed = (chrono::Utc::now() - last_flushed)
+                        .num_milliseconds()
+                        .max(0) as u64;
+                    // `saturating_sub` covers a flush that overran its window
+                    let data = rx.recv_timeout(std::time::Duration::from_millis(
+                        timer.saturating_sub(elapsed),
+                    ));
+
+                    let disconnected = match data {
                         // Update the analytics data with feature_id received
                         Ok(feature_name) => {
+                            let mut analytics_data = analytics_data_locked.write().unwrap();
                             analytics_data
                                 .entry(feature_name)
                                 .and_modify(|e| *e += 1)
                                 .or_insert(1);
+                            false
                         }
-                        Err(flume::TryRecvError::Empty) => {}
-                        Err(flume::TryRecvError::Disconnected) => {
+                        Err(flume::RecvTimeoutError::Timeout) => false,
+                        Err(flume::RecvTimeoutError::Disconnected) => {
                             debug!("Shutting down analytics thread ");
-                            break;
+                            true
                         }
                     };
-                    if (chrono::Utc::now() - last_flushed).num_milliseconds() > timer as i64 {
+
+                    // Flush when due, or on shutdown
+                    let flush_due = (chrono::Utc::now() - last_flushed).num_milliseconds()
+                        > timer as i64
+                        || disconnected;
+                    if flush_due {
+                        let mut analytics_data = analytics_data_locked.write().unwrap();
                         flush(&client, &analytics_data, &analytics_endpoint);
                         analytics_data.clear();
                         last_flushed = chrono::Utc::now();
+                    }
+
+                    if disconnected {
+                        break;
                     }
                 }
             })
@@ -93,6 +112,57 @@ mod tests {
     use super::*;
     use httpmock::prelude::*;
     use reqwest::header;
+
+    #[test]
+    fn dropping_processor_flushes_pending_data_and_shuts_down() {
+        // Given
+        let feature_1 = "feature_1";
+        let server = MockServer::start();
+        let shutdown_flush_mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/v1/analytics/flags/")
+                .json_body(serde_json::json!({feature_1: 2}));
+            then.status(200);
+        });
+
+        let processor = AnalyticsProcessor::new(
+            server.url("/api/v1/"),
+            header::HeaderMap::new(),
+            std::time::Duration::from_secs(10),
+            Some(60_000), // deliberately never due during this test
+        );
+        processor.track_feature(feature_1);
+        processor.track_feature(feature_1);
+        thread::sleep(std::time::Duration::from_millis(50));
+
+        // Nothing should have been sent yet: the timer is 60s away.
+        shutdown_flush_mock.assert_hits(0);
+
+        // When
+        drop(processor);
+        thread::sleep(std::time::Duration::from_millis(50));
+
+        // Then
+        shutdown_flush_mock.assert_hits(1);
+    }
+
+    #[test]
+    fn flush_survives_unreachable_endpoint() {
+        // Given
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_millis(100))
+            .build()
+            .unwrap();
+        let mut analytics_data = HashMap::new();
+        analytics_data.insert("feature_1".to_string(), 1);
+
+        // When / Then
+        flush(
+            &client,
+            &analytics_data,
+            "http://127.0.0.1:1/analytics/flags/",
+        );
+    }
 
     #[test]
     fn track_feature_updates_analytics_data() {

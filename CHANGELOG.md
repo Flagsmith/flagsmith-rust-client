@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.1.0...v3.1.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **analytics:** Infinite unbound loop in analytics processor ([#57](https://github.com/Flagsmith/flagsmith-rust-client/issues/57)) ([f7e79c5](https://github.com/Flagsmith/flagsmith-rust-client/commit/f7e79c55b34791800b5b09b6c86ca105fdeca407))
+
 ## [3.1.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.0.0...v3.1.0) (2026-08-26)
 
 

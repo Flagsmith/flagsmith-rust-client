@@ -65,6 +65,10 @@ pub struct Flagsmith {
     environment_url: String,
     options: FlagsmithOptions,
     datastore: Arc<Mutex<DataStore>>,
+    // Serialises refreshes of the environment document, so two fetches in
+    // flight at once cannot apply an older document over a newer one. Readers
+    // never take it.
+    refresh_lock: Arc<Mutex<()>>,
     analytics_processor: Option<AnalyticsProcessor>,
     _polling_thread_tx: SyncSender<u32>, // to trigger polling manager shutdown
 }
@@ -130,6 +134,7 @@ impl Flagsmith {
             environment: None,
             evaluation_context: None,
         }));
+        let refresh_lock = Arc::new(Mutex::new(()));
         let (tx, rx) = mpsc::sync_channel::<u32>(1);
 
         let flagsmith = Flagsmith {
@@ -139,6 +144,7 @@ impl Flagsmith {
             identities_url,
             options: flagsmith_options,
             datastore: Arc::clone(&ds),
+            refresh_lock: Arc::clone(&refresh_lock),
             analytics_processor,
             _polling_thread_tx: tx,
         };
@@ -166,7 +172,7 @@ impl Flagsmith {
 
         if flagsmith.options.enable_local_evaluation {
             // Update environment once...
-            if let Err(e) = update_environment(&client, &ds, &environment_url) {
+            if let Err(e) = update_environment(&client, &ds, &refresh_lock, &environment_url) {
                 log::warn!(
                     "Failed to fetch environment on initialization: {}. Will retry in background.",
                     e
@@ -175,6 +181,7 @@ impl Flagsmith {
 
             // ...and continue updating in the background
             let ds = Arc::clone(&ds);
+            let refresh_lock = Arc::clone(&refresh_lock);
             thread::spawn(move || loop {
                 match rx.try_recv() {
                     Ok(_) | Err(TryRecvError::Disconnected) => {
@@ -184,7 +191,7 @@ impl Flagsmith {
                     Err(TryRecvError::Empty) => {}
                 }
                 thread::sleep(Duration::from_millis(environment_refresh_interval_mills));
-                if let Err(e) = update_environment(&client, &ds, &environment_url) {
+                if let Err(e) = update_environment(&client, &ds, &refresh_lock, &environment_url) {
                     log::warn!(
                         "Failed to update environment: {}. Will retry on next interval.",
                         e
@@ -325,7 +332,12 @@ impl Flagsmith {
         );
     }
     pub fn update_environment(&mut self) -> Result<(), error::Error> {
-        return update_environment(&self.client, &self.datastore, &self.environment_url);
+        return update_environment(
+            &self.client,
+            &self.datastore,
+            &self.refresh_lock,
+            &self.environment_url,
+        );
     }
 
     fn get_identity_flags_from_document(
@@ -424,10 +436,16 @@ fn get_environment_from_api(
 fn update_environment(
     client: &reqwest::blocking::Client,
     datastore: &Arc<Mutex<DataStore>>,
+    refresh_lock: &Arc<Mutex<()>>,
     environment_url: &String,
 ) -> Result<(), error::Error> {
-    // Fetched and parsed before the lock is taken, so readers are never held
-    // for the length of the request.
+    // One refresh at a time, and fetched and parsed before the datastore
+    // lock is taken, so readers are never held for the length of the request.
+    // The lock guards no data, so a refresh that panicked while holding it
+    // must not stop every later refresh.
+    let _refresh = refresh_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let environment = get_environment_from_api(client, environment_url.clone())?;
     let eval_context = environment_to_context(environment.clone());
     let mut data = datastore.lock().unwrap();

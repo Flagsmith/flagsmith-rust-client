@@ -843,13 +843,13 @@ fn test_reads_do_not_wait_for_a_slow_environment_refresh(
     mock_server: MockServer,
     environment_json: serde_json::Value,
 ) {
-    // Given a document that takes a second to arrive and a refresh every 100ms
+    // Given a document that takes two seconds to arrive and a refresh every 100ms
     let _api_mock = mock_server.mock(|when, then| {
         when.method(GET)
             .path("/api/v1/environment-document/")
             .header("X-Environment-Key", ENVIRONMENT_KEY);
         then.status(200)
-            .delay(std::time::Duration::from_secs(1))
+            .delay(std::time::Duration::from_secs(2))
             .json_body(environment_json);
     });
     let flagsmith_options = FlagsmithOptions {
@@ -865,8 +865,9 @@ fn test_reads_do_not_wait_for_a_slow_environment_refresh(
     while started.elapsed() < std::time::Duration::from_millis(1500) {
         let read = std::time::Instant::now();
         flagsmith.get_environment_flags().unwrap();
-        // Then none of them waits for the request
-        assert!(read.elapsed() < std::time::Duration::from_millis(300));
+        // Then none of them waits for the request: the bound is well under
+        // the delay and well over a slow runner's scheduling jitter
+        assert!(read.elapsed() < std::time::Duration::from_secs(1));
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
 }

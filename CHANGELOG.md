@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.2](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.1.1...v3.1.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* keep the datastore lock out of network requests and parse the environment document fallibly ([#62](https://github.com/Flagsmith/flagsmith-rust-client/issues/62)) ([8ea9ffa](https://github.com/Flagsmith/flagsmith-rust-client/commit/8ea9ffa34f35e952513a0e4c55b6954300fd8903))
+
 ## [3.1.1](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.1.0...v3.1.1) (2026-08-27)
 
 

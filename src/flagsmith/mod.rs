@@ -5,7 +5,6 @@ use flagsmith_flag_engine::engine::get_evaluation_result;
 use flagsmith_flag_engine::engine_eval::{
     add_identity_to_context, environment_to_context, EngineEvaluationContext, SegmentSource,
 };
-use flagsmith_flag_engine::environments::builders::build_environment_struct;
 use flagsmith_flag_engine::environments::Environment;
 use flagsmith_flag_engine::identities::Trait;
 use flagsmith_flag_engine::segments::Segment;
@@ -66,6 +65,10 @@ pub struct Flagsmith {
     environment_url: String,
     options: FlagsmithOptions,
     datastore: Arc<Mutex<DataStore>>,
+    // Serialises refreshes of the environment document, so two fetches in
+    // flight at once cannot apply an older document over a newer one. Readers
+    // never take it.
+    refresh_lock: Arc<Mutex<()>>,
     analytics_processor: Option<AnalyticsProcessor>,
     _polling_thread_tx: SyncSender<u32>, // to trigger polling manager shutdown
 }
@@ -131,6 +134,7 @@ impl Flagsmith {
             environment: None,
             evaluation_context: None,
         }));
+        let refresh_lock = Arc::new(Mutex::new(()));
         let (tx, rx) = mpsc::sync_channel::<u32>(1);
 
         let flagsmith = Flagsmith {
@@ -140,6 +144,7 @@ impl Flagsmith {
             identities_url,
             options: flagsmith_options,
             datastore: Arc::clone(&ds),
+            refresh_lock: Arc::clone(&refresh_lock),
             analytics_processor,
             _polling_thread_tx: tx,
         };
@@ -167,7 +172,7 @@ impl Flagsmith {
 
         if flagsmith.options.enable_local_evaluation {
             // Update environment once...
-            if let Err(e) = update_environment(&client, &ds, &environment_url) {
+            if let Err(e) = update_environment(&client, &ds, &refresh_lock, &environment_url) {
                 log::warn!(
                     "Failed to fetch environment on initialization: {}. Will retry in background.",
                     e
@@ -176,6 +181,7 @@ impl Flagsmith {
 
             // ...and continue updating in the background
             let ds = Arc::clone(&ds);
+            let refresh_lock = Arc::clone(&refresh_lock);
             thread::spawn(move || loop {
                 match rx.try_recv() {
                     Ok(_) | Err(TryRecvError::Disconnected) => {
@@ -185,7 +191,7 @@ impl Flagsmith {
                     Err(TryRecvError::Empty) => {}
                 }
                 thread::sleep(Duration::from_millis(environment_refresh_interval_mills));
-                if let Err(e) = update_environment(&client, &ds, &environment_url) {
+                if let Err(e) = update_environment(&client, &ds, &refresh_lock, &environment_url) {
                     log::warn!(
                         "Failed to update environment: {}. Will retry on next interval.",
                         e
@@ -197,10 +203,13 @@ impl Flagsmith {
     }
     //Returns `Flags` struct holding all the flags for the current environment.
     pub fn get_environment_flags(&self) -> Result<models::Flags, error::Error> {
-        let data = self.datastore.lock().unwrap();
-        if data.evaluation_context.is_some() {
-            let eval_context = data.evaluation_context.as_ref().unwrap();
-            return Ok(self.get_environment_flags_from_document(eval_context));
+        // The lock is released before any request is made, so a read never
+        // waits on the network for another caller.
+        {
+            let data = self.datastore.lock().unwrap();
+            if let Some(eval_context) = data.evaluation_context.as_ref() {
+                return Ok(self.get_environment_flags_from_document(eval_context));
+            }
         }
         return self.default_handler_if_err(self.get_environment_flags_from_api());
     }
@@ -231,12 +240,17 @@ impl Flagsmith {
         traits: Option<Vec<SDKTrait>>,
         transient: Option<bool>,
     ) -> Result<Flags, error::Error> {
-        let data = self.datastore.lock().unwrap();
         let traits = traits.unwrap_or(vec![]);
-        if data.evaluation_context.is_some() {
-            let eval_context = data.evaluation_context.as_ref().unwrap();
-            let engine_traits: Vec<Trait> = traits.into_iter().map(|t| t.into()).collect();
-            return self.get_identity_flags_from_document(eval_context, identifier, engine_traits);
+        {
+            let data = self.datastore.lock().unwrap();
+            if let Some(eval_context) = data.evaluation_context.as_ref() {
+                let engine_traits: Vec<Trait> = traits.into_iter().map(|t| t.into()).collect();
+                return self.get_identity_flags_from_document(
+                    eval_context,
+                    identifier,
+                    engine_traits,
+                );
+            }
         }
         return self.default_handler_if_err(self.get_identity_flags_from_api(
             identifier,
@@ -318,7 +332,12 @@ impl Flagsmith {
         );
     }
     pub fn update_environment(&mut self) -> Result<(), error::Error> {
-        return update_environment(&self.client, &self.datastore, &self.environment_url);
+        return update_environment(
+            &self.client,
+            &self.datastore,
+            &self.refresh_lock,
+            &self.environment_url,
+        );
     }
 
     fn get_identity_flags_from_document(
@@ -404,22 +423,34 @@ fn get_environment_from_api(
 ) -> Result<Environment, error::Error> {
     let method = reqwest::Method::GET;
     let json_document = get_json_response(client, method, environment_url, None)?;
-    let environment = build_environment_struct(json_document);
-    return Ok(environment);
+    // A document the engine cannot parse is an error, not a panic: the
+    // caller keeps the last document it had.
+    serde_json::from_value(json_document).map_err(|e| {
+        error::Error::new(
+            error::ErrorKind::FlagsmithAPIError,
+            format!("Unable to parse the environment document: {e}"),
+        )
+    })
 }
 
 fn update_environment(
     client: &reqwest::blocking::Client,
     datastore: &Arc<Mutex<DataStore>>,
+    refresh_lock: &Arc<Mutex<()>>,
     environment_url: &String,
 ) -> Result<(), error::Error> {
+    // One refresh at a time, and fetched and parsed before the datastore
+    // lock is taken, so readers are never held for the length of the request.
+    // The lock guards no data, so a refresh that panicked while holding it
+    // must not stop every later refresh.
+    let _refresh = refresh_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let environment = get_environment_from_api(client, environment_url.clone())?;
+    let eval_context = environment_to_context(environment.clone());
     let mut data = datastore.lock().unwrap();
-    let environment = Some(get_environment_from_api(&client, environment_url.clone())?);
-
-    let eval_context = environment_to_context(environment.as_ref().unwrap().clone());
     data.evaluation_context = Some(eval_context);
-
-    data.environment = environment;
+    data.environment = Some(environment);
     return Ok(());
 }
 

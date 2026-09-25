@@ -837,3 +837,72 @@ fn test_get_identity_segments_filters_identity_override_segments(local_eval_flag
     );
     assert_eq!(segments[0].id, 1, "Should have correct segment ID");
 }
+
+#[rstest]
+fn test_reads_do_not_wait_for_a_slow_environment_refresh(
+    mock_server: MockServer,
+    environment_json: serde_json::Value,
+) {
+    // Given a document that takes two seconds to arrive and a refresh every 100ms
+    let _api_mock = mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/environment-document/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(200)
+            .delay(std::time::Duration::from_secs(2))
+            .json_body(environment_json);
+    });
+    let flagsmith_options = FlagsmithOptions {
+        api_url: mock_server.url("/api/v1/"),
+        enable_local_evaluation: true,
+        environment_refresh_interval_mills: 100,
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When reads happen while the background refresh is in flight
+    let started = std::time::Instant::now();
+    while started.elapsed() < std::time::Duration::from_millis(1500) {
+        let read = std::time::Instant::now();
+        flagsmith.get_environment_flags().unwrap();
+        // Then none of them waits for the request: the bound is well under
+        // the delay and well over a slow runner's scheduling jitter
+        assert!(read.elapsed() < std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+#[rstest]
+fn test_malformed_environment_document_is_an_error_and_keeps_the_last_document(
+    mock_server: MockServer,
+    environment_json: serde_json::Value,
+) {
+    // Given a client that has loaded a good document
+    let mut good = mock_server.mock(|when, then| {
+        when.method(GET).path("/api/v1/environment-document/");
+        then.status(200).json_body(environment_json);
+    });
+    let flagsmith_options = FlagsmithOptions {
+        api_url: mock_server.url("/api/v1/"),
+        ..Default::default()
+    };
+    let mut flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+    flagsmith.update_environment().unwrap();
+    let before = flagsmith.get_environment_flags().unwrap().all_flags().len();
+    good.delete();
+
+    // When the next document cannot be parsed
+    let _bad = mock_server.mock(|when, then| {
+        when.method(GET).path("/api/v1/environment-document/");
+        then.status(200)
+            .json_body(serde_json::json!({"not": "an environment"}));
+    });
+    let result = flagsmith.update_environment();
+
+    // Then it is an error, and reads still serve the last document
+    assert!(result.is_err());
+    assert_eq!(
+        flagsmith.get_environment_flags().unwrap().all_flags().len(),
+        before
+    );
+}

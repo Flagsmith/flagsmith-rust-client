@@ -12,6 +12,7 @@ mod fixtures;
 use fixtures::default_flag_handler;
 use fixtures::environment_json;
 use fixtures::environment_json_with_context_value_override;
+use fixtures::environment_json_with_flag_dependency;
 use fixtures::flags_json;
 use fixtures::identities_json;
 use fixtures::local_eval_flagsmith;
@@ -269,6 +270,43 @@ fn test_get_identity_flags_uses_local_environment_when_available(
         fixtures::FEATURE_1_STR_VALUE
     );
     api_mock.assert();
+}
+
+#[rstest]
+#[case(true, true, SEGMENT_OVERRIDE_VALUE)]
+#[case(false, false, fixtures::FEATURE_1_STR_VALUE)]
+fn test_get_identity_flags_applies_segment_overrides_that_depend_on_another_flag(
+    mock_server: MockServer,
+    #[case] prerequisite_enabled: bool,
+    #[case] expected_enabled: bool,
+    #[case] expected_value: &str,
+) {
+    // Given
+    let environment_json = environment_json_with_flag_dependency(prerequisite_enabled);
+    mock_server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/environment-document/")
+            .header("X-Environment-Key", ENVIRONMENT_KEY);
+        then.status(200).json_body(environment_json);
+    });
+    let flagsmith_options = FlagsmithOptions {
+        api_url: mock_server.url("/api/v1/"),
+        enable_local_evaluation: true,
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let identity_flags = flagsmith
+        .get_identity_flags("test_identity", None, None)
+        .unwrap();
+
+    // Then
+    let dependent_flag = identity_flags
+        .get_flag(fixtures::DEPENDENT_FEATURE_NAME)
+        .unwrap();
+    assert_eq!(dependent_flag.enabled, expected_enabled);
+    assert_eq!(dependent_flag.value_as_string().unwrap(), expected_value);
 }
 
 #[rstest]

@@ -7,6 +7,10 @@ pub static FEATURE_1_NAME: &str = "feature_1";
 pub static FEATURE_1_ID: u32 = 1;
 pub static FEATURE_1_STR_VALUE: &str = "some_value";
 pub static SEGMENT_OVERRIDE_VALUE: &str = "segment_override";
+pub static PREREQUISITE_FEATURE_NAME: &str = "prerequisite";
+pub static PREREQUISITE_FEATURE_ID: u32 = 2;
+pub static DEPENDENT_FEATURE_NAME: &str = "dependent";
+pub static DEPENDENT_FEATURE_ID: u32 = 3;
 pub static DEFAULT_FLAG_HANDLER_FLAG_VALUE: &str = "default_flag_handler_flag_value";
 
 pub const ENVIRONMENT_KEY: &str = "ser.test_environment_key";
@@ -80,6 +84,89 @@ pub fn environment_json_with_context_value_override() -> serde_json::Value {
             "segment_id": null,
             "enabled": true
         }],
+        "identity_overrides": []
+    })
+}
+
+#[fixture]
+pub fn environment_json_with_flag_dependency(
+    #[default(true)] prerequisite_enabled: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "api_key": "B62qaMZNwfiqT76p38ggrQ",
+        "name": "Test Environment",
+        "project": {
+            "name": "Test project",
+            "organisation": {
+                "feature_analytics": false,
+                "name": "Test Org",
+                "id": 1,
+                "persist_trait_data": true,
+                "stop_serving_flags": false
+            },
+            "id": 1,
+            "hide_disabled_flags": false,
+            "segments": [{
+                "id": 1,
+                "name": "Prerequisite enabled",
+                "feature_states": [{
+                    "multivariate_feature_state_values": [],
+                    "feature_state_value": SEGMENT_OVERRIDE_VALUE,
+                    "id": 3,
+                    "featurestate_uuid": "8a4b3e0e-6f3c-4f4e-9a36-0b5f2c1d7e90",
+                    "feature": {
+                        "name": DEPENDENT_FEATURE_NAME,
+                        "type": "STANDARD",
+                        "id": DEPENDENT_FEATURE_ID
+                    },
+                    "segment_id": 1,
+                    "enabled": true
+                }],
+                "rules": [{
+                    "type": "ALL",
+                    "conditions": [],
+                    "rules": [{
+                        "type": "ALL",
+                        "rules": [],
+                        "conditions": [{
+                            "operator": "EQUAL",
+                            "property_": "$.flags.prerequisite.enabled",
+                            "value": "true"
+                        }]
+                    }]
+                }]
+            }]
+        },
+        "segment_overrides": [],
+        "id": 1,
+        "feature_states": [
+            {
+                "multivariate_feature_state_values": [],
+                "feature_state_value": null,
+                "id": 1,
+                "featurestate_uuid": "1f6d2c3b-7a54-4e8f-b2a1-9c0d3e4f5a6b",
+                "feature": {
+                    "name": PREREQUISITE_FEATURE_NAME,
+                    "type": "STANDARD",
+                    "id": PREREQUISITE_FEATURE_ID
+                },
+                "segment_id": null,
+                "enabled": prerequisite_enabled
+            },
+            {
+                "multivariate_feature_state_values": [],
+                "feature_state_value": FEATURE_1_STR_VALUE,
+                "id": 2,
+                "featurestate_uuid": "5c2e8d1a-3b7f-4a9e-8d6c-2f1b0a9e8d7c",
+                "feature": {
+                    "name": DEPENDENT_FEATURE_NAME,
+                    "type": "STANDARD",
+                    "id": DEPENDENT_FEATURE_ID
+                },
+                "segment_id": null,
+                "enabled": false
+            }
+        ],
         "identity_overrides": []
     })
 }

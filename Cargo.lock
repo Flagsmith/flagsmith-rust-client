@@ -656,8 +656,7 @@ dependencies = [
 [[package]]
 name = "flagsmith-flag-engine"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8506a1a6efe91540e5fa399f3d1ff1c1c756e431a2c8010885618b6a3d5da206"
+source = "git+https://github.com/Flagsmith/flagsmith-rust-flag-engine?rev=6d892ee7cf44eb5860899e925aa2433de4356c2f#6d892ee7cf44eb5860899e925aa2433de4356c2f"
 dependencies = [
  "chrono",
  "md-5",

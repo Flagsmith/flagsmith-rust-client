@@ -1,0 +1,14 @@
+# The steps file as a crate, built by the Rust harness of the Flagsmith SDK behavioural spec.
+[package]
+name = "sdk-spec"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "steps.rs"
+
+[dependencies]
+flagsmith = { path = ".." }
+flagsmith-flag-engine = "0.6"
+serde = { version = "1.0", features = ["derive"] }

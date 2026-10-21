@@ -11,6 +11,8 @@ readme = "README.md"
 categories = ["config", "api-bindings"]
 keywords = ["Flagsmith", "feature-flag", "remote-config"]
 rust-version = "1.86.0"
+# The spec adapter is a separate crate used only in CI.
+exclude = ["/spec-adapter"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

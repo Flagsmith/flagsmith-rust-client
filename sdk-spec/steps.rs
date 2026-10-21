@@ -29,7 +29,7 @@ fn as_spec_flags(flags: Flags) -> Vec<SpecFlag> {
         .collect()
 }
 
-// Given an SDK client for the environment
+// Create the SDK client
 pub fn create_client(environment_key: String, api_url: String) -> Flagsmith {
     let options = FlagsmithOptions {
         api_url,

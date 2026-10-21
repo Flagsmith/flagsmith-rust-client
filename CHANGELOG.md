@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.1.3](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.1.2...v3.1.3) (2026-10-21)
+
+
+### CI
+
+* Label Renovate's SDK spec bump PRs ([#67](https://github.com/Flagsmith/flagsmith-rust-client/issues/67)) ([1d1a2bb](https://github.com/Flagsmith/flagsmith-rust-client/commit/1d1a2bb9541ab9c143a8209f92c929a445acc8e9))
+* Run the Flagsmith SDK behavioural spec ([#65](https://github.com/Flagsmith/flagsmith-rust-client/issues/65)) ([9e00b4d](https://github.com/Flagsmith/flagsmith-rust-client/commit/9e00b4d85f91441e5f9f38fea685c1e4fba068cc))
+
 ## [3.1.2](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.1.1...v3.1.2) (2026-09-25)
 
 

@@ -11,8 +11,7 @@ readme = "README.md"
 categories = ["config", "api-bindings"]
 keywords = ["Flagsmith", "feature-flag", "remote-config"]
 rust-version = "1.86.0"
-# The SDK spec steps are a separate crate used only in CI.
-exclude = ["/sdk-spec"]
+exclude = ["/sdk-spec", "/benchmarks"]  # CI only
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -29,8 +28,3 @@ flagsmith-flag-engine = "0.6"
 [dev-dependencies]
 httpmock = "0.6"
 rstest = "0.12.0"
-divan = { package = "codspeed-divan-compat", version = "6.0.0" }
-
-[[bench]]
-name = "sdk"
-harness = false

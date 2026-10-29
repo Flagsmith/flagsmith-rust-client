@@ -16,6 +16,21 @@ pub struct Flag {
     pub is_default: bool,
     pub feature_id: u32,
     pub feature_name: String,
+    /// The key of the multivariate variant the identity was served. Only set by remote
+    /// identity evaluation.
+    pub variant: Option<String>,
+    /// The running experiment on the feature. Only set by remote identity evaluation.
+    pub experiment: Option<ExperimentMetadata>,
+}
+
+/// The running experiment a flag was evaluated under.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct ExperimentMetadata {
+    pub id: u64,
+    pub name: String,
+    /// Whether the identity is enrolled in the experiment. Outside the experiment's
+    /// rollout, an identity is still served a variant.
+    pub in_experiment: bool,
 }
 
 impl Flag {
@@ -26,6 +41,7 @@ impl Flag {
             is_default: false,
             feature_name: feature_state.feature.name,
             feature_id: feature_state.feature.id,
+            ..Default::default()
         };
     }
 
@@ -39,6 +55,8 @@ impl Flag {
             feature_name: flag_json["feature"]["name"].as_str()?.to_string(),
             feature_id: flag_json["feature"]["id"].as_u64()?.try_into().ok()?,
             value,
+            variant: flag_json["variant"].as_str().map(str::to_string),
+            experiment: serde_json::from_value(flag_json["metadata"]["experiment"].clone()).ok(),
         };
         Some(flag)
     }
@@ -129,6 +147,7 @@ impl Flags {
                 enabled: flag_result.enabled,
                 value: flag_result.value.clone(),
                 feature_id: flag_result.metadata.feature_id,
+                ..Default::default()
             };
             flags.insert(feature_name.clone(), flag);
         }
@@ -284,6 +303,50 @@ mod tests {
             feature_state_json["enabled"].as_bool().unwrap()
         );
         assert_eq!(flag.value, expected_value);
+    }
+
+    #[test]
+    fn flag_from_api_flag_carries_the_variant_and_experiment_served_to_the_identity() {
+        // Given
+        let flag_json = serde_json::json!({
+            "feature_state_value": "hello treatment",
+            "feature": {"name": "banner", "id": 1},
+            "enabled": true,
+            "variant": "treatment",
+            "metadata": {"experiment": {"id": 7, "name": "banner experiment", "in_experiment": true}}
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&flag_json).unwrap();
+
+        // Then
+        assert_eq!(flag.variant.as_deref(), Some("treatment"));
+        assert_eq!(
+            flag.experiment,
+            Some(ExperimentMetadata {
+                id: 7,
+                name: "banner experiment".to_string(),
+                in_experiment: true,
+            })
+        );
+    }
+
+    #[test]
+    fn flag_from_api_flag_without_an_experiment_has_none() {
+        // Given
+        let flag_json = serde_json::json!({
+            "feature_state_value": "hello",
+            "feature": {"name": "banner", "id": 1},
+            "enabled": true,
+            "variant": null
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&flag_json).unwrap();
+
+        // Then
+        assert_eq!(flag.variant, None);
+        assert_eq!(flag.experiment, None);
     }
 
     #[test]

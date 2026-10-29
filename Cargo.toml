@@ -29,3 +29,8 @@ flagsmith-flag-engine = "0.6"
 [dev-dependencies]
 httpmock = "0.6"
 rstest = "0.12.0"
+divan = { package = "codspeed-divan-compat", version = "6.0.0" }
+
+[[bench]]
+name = "sdk"
+harness = false

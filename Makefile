@@ -7,5 +7,5 @@ $(SDK_BENCHMARKS)/environments:
 .PHONY: benchmark
 benchmark: | $(SDK_BENCHMARKS)/environments
 	cargo install --locked cargo-codspeed@$(CARGO_CODSPEED_VERSION)
-	cd benchmarks && cargo codspeed build --locked --measurement-mode walltime
-	cd benchmarks && SDK_BENCHMARKS_ENVIRONMENTS=$(CURDIR)/$(SDK_BENCHMARKS)/environments cargo codspeed run --measurement-mode walltime
+	cd benchmarks && cargo codspeed build --locked
+	cd benchmarks && SDK_BENCHMARKS_ENVIRONMENTS=$(CURDIR)/$(SDK_BENCHMARKS)/environments cargo codspeed run

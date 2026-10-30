@@ -38,6 +38,16 @@ pub fn create_client(environment_key: String, api_url: String) -> Flagsmith {
     Flagsmith::new(environment_key, options)
 }
 
+// Create the SDK client with local evaluation
+pub fn create_client_with_local_evaluation(environment_key: String, api_url: String) -> Flagsmith {
+    let options = FlagsmithOptions {
+        api_url,
+        enable_local_evaluation: true,
+        ..Default::default()
+    };
+    Flagsmith::new(environment_key, options)
+}
+
 // When the application gets the environment flags
 pub fn get_environment_flags(flagsmith: &Flagsmith) -> Result<Vec<SpecFlag>, Error> {
     flagsmith.get_environment_flags().map(as_spec_flags)

@@ -3,7 +3,8 @@ use self::models::{Flag, Flags};
 use super::error;
 use flagsmith_flag_engine::engine::get_evaluation_result;
 use flagsmith_flag_engine::engine_eval::{
-    add_identity_to_context, environment_to_context, EngineEvaluationContext, SegmentSource,
+    add_identity_to_context, environment_to_context, remove_identity_from_context,
+    EngineEvaluationContext, SegmentSource,
 };
 use flagsmith_flag_engine::environments::Environment;
 use flagsmith_flag_engine::identities::Trait;
@@ -12,7 +13,6 @@ use log::debug;
 use models::SDKTrait;
 use reqwest::header::{self, HeaderMap};
 use serde_json::json;
-use std::collections::HashMap;
 use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
@@ -317,14 +317,7 @@ impl Flagsmith {
         &self,
         eval_context: &EngineEvaluationContext,
     ) -> models::Flags {
-        // Clear segments and identity for environment evaluation
-        let environment_eval_ctx = EngineEvaluationContext {
-            environment: eval_context.environment.clone(),
-            features: eval_context.features.clone(),
-            segments: HashMap::new(),
-            identity: None,
-        };
-        let result = get_evaluation_result(&environment_eval_ctx);
+        let result = get_evaluation_result(&remove_identity_from_context(eval_context));
         return models::Flags::from_evaluation_result(
             &result,
             self.analytics_processor.clone(),

@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.2.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.1.2...v3.2.0) (2026-10-30)
+
+
+### Features
+
+* **CI:** Set up CodSpeed ([#71](https://github.com/Flagsmith/flagsmith-rust-client/issues/71)) ([5351191](https://github.com/Flagsmith/flagsmith-rust-client/commit/5351191603e9881899789049b5d1f179672eb40e))
+
+
+### CI
+
+* Build CodSpeed benchmarks outside the simulation ([#77](https://github.com/Flagsmith/flagsmith-rust-client/issues/77)) ([6649750](https://github.com/Flagsmith/flagsmith-rust-client/commit/66497506aa20222a2ace11c8b47a2b939c09d5c9))
+* Bump flagsmith-flag-engine's minimum version via Renovate ([#72](https://github.com/Flagsmith/flagsmith-rust-client/issues/72)) ([b8bfa11](https://github.com/Flagsmith/flagsmith-rust-client/commit/b8bfa1184b3eed610a530cc54390b34f8e1db1f1))
+* Label Renovate's SDK spec bump PRs ([#67](https://github.com/Flagsmith/flagsmith-rust-client/issues/67)) ([1d1a2bb](https://github.com/Flagsmith/flagsmith-rust-client/commit/1d1a2bb9541ab9c143a8209f92c929a445acc8e9))
+* Run CodSpeed benchmarks in simulation on GitHub-hosted runners ([#75](https://github.com/Flagsmith/flagsmith-rust-client/issues/75)) ([f438520](https://github.com/Flagsmith/flagsmith-rust-client/commit/f4385209f8a32eb04937f51bda155822ec901346))
+* Run the Flagsmith SDK behavioural spec ([#65](https://github.com/Flagsmith/flagsmith-rust-client/issues/65)) ([9e00b4d](https://github.com/Flagsmith/flagsmith-rust-client/commit/9e00b4d85f91441e5f9f38fea685c1e4fba068cc))
+
+
+### Dependency Updates
+
+* Update flagsmith-flag-engine to 0.6.1 ([#73](https://github.com/Flagsmith/flagsmith-rust-client/issues/73)) ([4bf93a4](https://github.com/Flagsmith/flagsmith-rust-client/commit/4bf93a47f47bdffaf29c06472b0f20bb8e426a8d))
+
 ## [3.1.2](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.1.1...v3.1.2) (2026-09-25)
 
 

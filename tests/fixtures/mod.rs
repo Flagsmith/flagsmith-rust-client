@@ -58,7 +58,7 @@ pub fn environment_json_with_context_value_override() -> serde_json::Value {
                         "rules": [],
                         "conditions": [{
                             "operator": "EQUAL",
-                            "property": "$.environment.name",
+                            "property_": "$.environment.name",
                             "value": "Test Environment"
                         }]
                     }]

@@ -6,7 +6,7 @@ publish = false
 
 [dev-dependencies]
 flagsmith = { path = ".." }
-flagsmith-flag-engine = "0.6.1"
+flagsmith-flag-engine = { git = "https://github.com/Flagsmith/flagsmith-rust-flag-engine", rev = "92e19652b656f489769bdd62187a440f594a3c73" }
 httpmock = "0.6"
 divan = { package = "codspeed-divan-compat", version = "6.0.0" }
 

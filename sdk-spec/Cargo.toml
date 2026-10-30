@@ -10,5 +10,5 @@ path = "steps.rs"
 
 [dependencies]
 flagsmith = { path = ".." }
-flagsmith-flag-engine = "0.6.1"
+flagsmith-flag-engine = { git = "https://github.com/Flagsmith/flagsmith-rust-flag-engine", rev = "92e19652b656f489769bdd62187a440f594a3c73" }
 serde = { version = "1.0", features = ["derive"] }

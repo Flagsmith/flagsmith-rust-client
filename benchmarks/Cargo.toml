@@ -6,7 +6,7 @@ publish = false
 
 [dev-dependencies]
 flagsmith = { path = ".." }
-flagsmith-flag-engine = "0.6"
+flagsmith-flag-engine = "0.6.1"
 httpmock = "0.6"
 divan = { package = "codspeed-divan-compat", version = "6.0.0" }
 

@@ -23,7 +23,7 @@ url = "2.1"
 chrono = { version = "0.4" }
 log = "0.4"
 flume = "0.10.14"
-flagsmith-flag-engine = { git = "https://github.com/Flagsmith/flagsmith-rust-flag-engine", rev = "0552139222db80ea1ec16ec5a6a7e4ae5912bcc5" }
+flagsmith-flag-engine = { git = "https://github.com/Flagsmith/flagsmith-rust-flag-engine", rev = "92e19652b656f489769bdd62187a440f594a3c73" }
 
 [dev-dependencies]
 httpmock = "0.6"

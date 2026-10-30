@@ -656,7 +656,7 @@ dependencies = [
 [[package]]
 name = "flagsmith-flag-engine"
 version = "0.6.1"
-source = "git+https://github.com/Flagsmith/flagsmith-rust-flag-engine?rev=0552139222db80ea1ec16ec5a6a7e4ae5912bcc5#0552139222db80ea1ec16ec5a6a7e4ae5912bcc5"
+source = "git+https://github.com/Flagsmith/flagsmith-rust-flag-engine?rev=92e19652b656f489769bdd62187a440f594a3c73#92e19652b656f489769bdd62187a440f594a3c73"
 dependencies = [
  "chrono",
  "indexmap",

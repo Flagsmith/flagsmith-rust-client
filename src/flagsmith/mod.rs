@@ -15,7 +15,10 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
-use std::{thread, time::Duration};
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
 mod analytics;
 
@@ -172,7 +175,13 @@ impl Flagsmith {
 
         if flagsmith.options.enable_local_evaluation {
             // Update environment once...
-            if let Err(e) = update_environment(&client, &ds, &refresh_lock, &environment_url) {
+            if let Err(e) = update_environment(
+                &client,
+                &ds,
+                &refresh_lock,
+                &environment_url,
+                environment_refresh_interval_mills,
+            ) {
                 log::warn!(
                     "Failed to fetch environment on initialization: {}. Will retry in background.",
                     e
@@ -191,7 +200,13 @@ impl Flagsmith {
                     Err(TryRecvError::Empty) => {}
                 }
                 thread::sleep(Duration::from_millis(environment_refresh_interval_mills));
-                if let Err(e) = update_environment(&client, &ds, &refresh_lock, &environment_url) {
+                if let Err(e) = update_environment(
+                    &client,
+                    &ds,
+                    &refresh_lock,
+                    &environment_url,
+                    environment_refresh_interval_mills,
+                ) {
                     log::warn!(
                         "Failed to update environment: {}. Will retry on next interval.",
                         e
@@ -337,6 +352,7 @@ impl Flagsmith {
             &self.datastore,
             &self.refresh_lock,
             &self.environment_url,
+            self.options.environment_refresh_interval_mills,
         );
     }
 
@@ -421,8 +437,18 @@ fn get_environment_from_api(
     client: &reqwest::blocking::Client,
     environment_url: String,
 ) -> Result<Environment, error::Error> {
-    let method = reqwest::Method::GET;
-    let json_document = get_json_response(client, method, environment_url, None)?;
+    let base_url = url::Url::parse(&environment_url).map_err(|e| {
+        error::Error::new(
+            error::ErrorKind::FlagsmithAPIError,
+            format!("Invalid environment document URL: {e}"),
+        )
+    })?;
+    let (mut json_document, mut page_id) = get_environment_page(client, &base_url, None)?;
+    while let Some(id) = page_id {
+        let (page, next_page_id) = get_environment_page(client, &base_url, Some(&id))?;
+        append_identity_overrides(&mut json_document, page);
+        page_id = next_page_id;
+    }
     // A document the engine cannot parse is an error, not a panic: the
     // caller keeps the last document it had.
     serde_json::from_value(json_document).map_err(|e| {
@@ -433,11 +459,55 @@ fn get_environment_from_api(
     })
 }
 
+fn get_environment_page(
+    client: &reqwest::blocking::Client,
+    base_url: &url::Url,
+    page_id: Option<&str>,
+) -> Result<(serde_json::Value, Option<String>), error::Error> {
+    let mut url = base_url.clone();
+    if let Some(page_id) = page_id {
+        url.query_pairs_mut().append_pair("page_id", page_id);
+    }
+    let response = client.get(url).send()?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(error::Error::http(status, response.text()?));
+    }
+    let next_page_id = next_page_id(base_url, response.headers());
+    Ok((response.json()?, next_page_id))
+}
+
+fn next_page_id(base_url: &url::Url, headers: &HeaderMap) -> Option<String> {
+    let link = headers.get(header::LINK)?.to_str().ok()?;
+    let next = link.split(',').find(|part| part.contains("rel=\"next\""))?;
+    let target = next.split(['<', '>']).nth(1)?;
+    base_url
+        .join(target)
+        .ok()?
+        .query_pairs()
+        .find(|(name, _)| name == "page_id")
+        .map(|(_, value)| value.into_owned())
+}
+
+fn append_identity_overrides(document: &mut serde_json::Value, mut page: serde_json::Value) {
+    let Some(serde_json::Value::Array(overrides)) = page
+        .get_mut("identity_overrides")
+        .map(serde_json::Value::take)
+    else {
+        return;
+    };
+    match document.get_mut("identity_overrides") {
+        Some(serde_json::Value::Array(existing)) => existing.extend(overrides),
+        _ => document["identity_overrides"] = serde_json::Value::Array(overrides),
+    }
+}
+
 fn update_environment(
     client: &reqwest::blocking::Client,
     datastore: &Arc<Mutex<DataStore>>,
     refresh_lock: &Arc<Mutex<()>>,
     environment_url: &String,
+    environment_refresh_interval_mills: u64,
 ) -> Result<(), error::Error> {
     // One refresh at a time, and fetched and parsed before the datastore
     // lock is taken, so readers are never held for the length of the request.
@@ -446,7 +516,16 @@ fn update_environment(
     let _refresh = refresh_lock
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let started = Instant::now();
     let environment = get_environment_from_api(client, environment_url.clone())?;
+    let elapsed_mills = started.elapsed().as_millis();
+    if elapsed_mills > u128::from(environment_refresh_interval_mills) {
+        log::warn!(
+            "Fetching the environment document took {}ms, longer than environment_refresh_interval_mills ({}ms); raise the refresh interval or reduce the environment size.",
+            elapsed_mills,
+            environment_refresh_interval_mills
+        );
+    }
     let eval_context = environment_to_context(environment.clone());
     let mut data = datastore.lock().unwrap();
     data.evaluation_context = Some(eval_context);
@@ -735,5 +814,107 @@ mod tests {
 
         // Then
         api_mock.assert();
+    }
+
+    fn identity_override(identifier: &str, value: &str) -> serde_json::Value {
+        json!({
+            "identifier": identifier,
+            "identity_uuid": "0f21cde8-63c5-4e50-baca-87897fa6cd01",
+            "created_date": "2019-08-27T14:53:45.698555Z",
+            "environment_api_key": "B62qaMZNwfiqT76p38ggrQ",
+            "identity_features": [{
+                "id": 1,
+                "feature": {"id": 1, "name": "some_feature", "type": "STANDARD"},
+                "featurestate_uuid": "1bddb9a5-7e59-42c6-9be9-625fa369749f",
+                "feature_state_value": value,
+                "enabled": false,
+                "environment": 1,
+                "identity": null,
+                "feature_segment": null
+            }]
+        })
+    }
+
+    #[test]
+    fn test_local_evaluation_follows_environment_document_pages() {
+        // Given
+        let environment_key = "ser.test_environment_key";
+        let first_page: serde_json::Value = serde_json::from_str(ENVIRONMENT_JSON).unwrap();
+
+        let mock_server = MockServer::start();
+        let first_page_mock = mock_server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/environment-document/")
+                .header("X-Environment-Key", environment_key)
+                .matches(|request| {
+                    request
+                        .query_params
+                        .as_ref()
+                        .is_none_or(|params| params.is_empty())
+                });
+            then.status(200)
+                .header(
+                    "Link",
+                    "</api/v1/environment-document/?page_id=identity_override%3A1%3Apage-2>; rel=\"next\"",
+                )
+                .json_body(first_page);
+        });
+        let second_page_mock = mock_server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/environment-document/")
+                .header("X-Environment-Key", environment_key)
+                .query_param("page_id", "identity_override:1:page-2");
+            then.status(200)
+                .header(
+                    "Link",
+                    "</api/v1/environment-document/?page_id=identity_override%3A1%3Apage-3>; rel=\"next\"",
+                )
+                .json_body(json!({
+                    "identity_overrides": [identity_override("page-2-id", "page-2-value")]
+                }));
+        });
+        let third_page_mock = mock_server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/environment-document/")
+                .header("X-Environment-Key", environment_key)
+                .query_param("page_id", "identity_override:1:page-3");
+            then.status(200).json_body(json!({
+                "identity_overrides": [identity_override("page-3-id", "page-3-value")]
+            }));
+        });
+
+        let flagsmith_options = FlagsmithOptions {
+            api_url: mock_server.url("/api/v1/"),
+            enable_local_evaluation: true,
+            ..Default::default()
+        };
+
+        // When
+        let flagsmith = Flagsmith::new(environment_key.to_string(), flagsmith_options);
+
+        // Then
+        first_page_mock.assert();
+        second_page_mock.assert();
+        third_page_mock.assert();
+        let value_for = |identifier: &str| {
+            flagsmith
+                .get_identity_flags(identifier, None, None)
+                .unwrap()
+                .get_feature_value_as_string("some_feature")
+                .unwrap()
+                .to_owned()
+        };
+        assert_eq!(value_for("overridden-id"), "some-overridden-value");
+        assert_eq!(value_for("page-2-id"), "page-2-value");
+        assert_eq!(value_for("page-3-id"), "page-3-value");
+        assert_eq!(
+            flagsmith
+                .get_environment_flags()
+                .unwrap()
+                .get_feature_value_as_string("some_feature")
+                .unwrap()
+                .to_owned(),
+            "some-value"
+        );
     }
 }

@@ -29,6 +29,11 @@ jobs:
           channel: stable
           cache-target: release
 
+      - name: Install cargo-codspeed
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32  # v2.88.0
+        with:
+          tool: cargo-codspeed@6.0.0  # Keep in sync with CARGO_CODSPEED_VERSION in the Makefile
+
       - name: Run benchmarks
         uses: CodSpeedHQ/action@78102a468f96d8e0ccb92d0ec49425753fc42062  # v5.6.0
         with:

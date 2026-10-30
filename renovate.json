@@ -29,7 +29,8 @@
         },
         {
             "matchPackageNames": ["flagsmith-flag-engine"],
-            "enabled": true
+            "enabled": true,
+            "rangeStrategy": "bump"
         },
         {
             "matchPackageNames": ["Flagsmith/sdk-spec"],

@@ -14,7 +14,7 @@ permissions:
 jobs:
   benchmarks:
     name: Run benchmarks
-    runs-on: codspeed-macro
+    runs-on: ${{ vars.CODSPEED_RUNS_ON }}
 
     steps:
       - name: Checkout repository
@@ -29,8 +29,13 @@ jobs:
           channel: stable
           cache-target: release
 
+      - name: Build benchmarks
+        run: make benchmark-build
+        env:
+          CODSPEED_RUNNER_MODE: ${{ vars.CODSPEED_MODE }}  # Set by the CodSpeed action for benchmark-run
+
       - name: Run benchmarks
         uses: CodSpeedHQ/action@78102a468f96d8e0ccb92d0ec49425753fc42062  # v5.6.0
         with:
-          mode: walltime
-          run: make benchmark
+          mode: ${{ vars.CODSPEED_MODE }}
+          run: make benchmark-run

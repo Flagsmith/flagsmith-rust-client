@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use flagsmith::flagsmith::models::SDKTrait;
 use flagsmith::flagsmith::offline_handler;
 use flagsmith::{Flagsmith, FlagsmithOptions};
@@ -92,11 +94,11 @@ fn test_get_environment_flags_uses_local_environment_when_available(
 }
 
 #[rstest]
-fn test_get_environment_flags_ignores_segment_overrides(
+fn test_get_environment_flags__local_evaluation_with_segment_reading_environment__returns_segment_override(
     mock_server: MockServer,
     environment_json_with_context_value_override: serde_json::Value,
 ) {
-    // Given: a document with a segment override that would match the environment
+    // Given
     let api_mock = mock_server.mock(|when, then| {
         when.method(GET)
             .path("/api/v1/environment-document/")
@@ -118,8 +120,8 @@ fn test_get_environment_flags_ignores_segment_overrides(
         .get_feature_value_as_string(fixtures::FEATURE_1_NAME)
         .unwrap();
 
-    // Then: should return environment default value
-    assert_eq!(flag_value, fixtures::FEATURE_1_STR_VALUE);
+    // Then
+    assert_eq!(flag_value, SEGMENT_OVERRIDE_VALUE);
     api_mock.assert();
 }
 

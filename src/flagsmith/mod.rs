@@ -3,7 +3,8 @@ use self::models::{Flag, Flags};
 use super::error;
 use flagsmith_flag_engine::engine::get_evaluation_result;
 use flagsmith_flag_engine::engine_eval::{
-    add_identity_to_context, environment_to_context, EngineEvaluationContext, SegmentSource,
+    add_identity_to_context, environment_to_context, remove_identity_from_context,
+    EngineEvaluationContext, SegmentSource,
 };
 use flagsmith_flag_engine::environments::Environment;
 use flagsmith_flag_engine::identities::Trait;
@@ -12,7 +13,6 @@ use log::debug;
 use models::SDKTrait;
 use reqwest::header::{self, HeaderMap};
 use serde_json::json;
-use std::collections::HashMap;
 use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
@@ -76,6 +76,7 @@ pub struct Flagsmith {
 struct DataStore {
     environment: Option<Environment>,
     evaluation_context: Option<EngineEvaluationContext>,
+    identity_free_evaluation_context: Option<EngineEvaluationContext>,
 }
 
 impl Flagsmith {
@@ -133,6 +134,7 @@ impl Flagsmith {
         let ds = Arc::new(Mutex::new(DataStore {
             environment: None,
             evaluation_context: None,
+            identity_free_evaluation_context: None,
         }));
         let refresh_lock = Arc::new(Mutex::new(()));
         let (tx, rx) = mpsc::sync_channel::<u32>(1);
@@ -160,6 +162,8 @@ impl Flagsmith {
 
             // Create evaluation context from offline environment
             let eval_context = environment_to_context(environment.clone());
+            data.identity_free_evaluation_context =
+                Some(remove_identity_from_context(&eval_context));
             data.evaluation_context = Some(eval_context);
 
             data.environment = Some(environment);
@@ -207,7 +211,7 @@ impl Flagsmith {
         // waits on the network for another caller.
         {
             let data = self.datastore.lock().unwrap();
-            if let Some(eval_context) = data.evaluation_context.as_ref() {
+            if let Some(eval_context) = data.identity_free_evaluation_context.as_ref() {
                 return Ok(self.get_environment_flags_from_document(eval_context));
             }
         }
@@ -317,14 +321,7 @@ impl Flagsmith {
         &self,
         eval_context: &EngineEvaluationContext,
     ) -> models::Flags {
-        // Clear segments and identity for environment evaluation
-        let environment_eval_ctx = EngineEvaluationContext {
-            environment: eval_context.environment.clone(),
-            features: eval_context.features.clone(),
-            segments: HashMap::new(),
-            identity: None,
-        };
-        let result = get_evaluation_result(&environment_eval_ctx);
+        let result = get_evaluation_result(eval_context);
         return models::Flags::from_evaluation_result(
             &result,
             self.analytics_processor.clone(),
@@ -448,7 +445,9 @@ fn update_environment(
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let environment = get_environment_from_api(client, environment_url.clone())?;
     let eval_context = environment_to_context(environment.clone());
+    let identity_free_eval_context = remove_identity_from_context(&eval_context);
     let mut data = datastore.lock().unwrap();
+    data.identity_free_evaluation_context = Some(identity_free_eval_context);
     data.evaluation_context = Some(eval_context);
     data.environment = Some(environment);
     return Ok(());

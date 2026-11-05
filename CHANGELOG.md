@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.1](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.2.0...v3.2.1) (2026-11-05)
+
+
+### Other
+
+* Let Renovate keep updating spec bumps the webhook handler commits to ([#79](https://github.com/Flagsmith/flagsmith-rust-client/issues/79)) ([de1d8e8](https://github.com/Flagsmith/flagsmith-rust-client/commit/de1d8e8864748ddec62718b89e04452e57d9e890))
+
 ## [3.2.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.1.2...v3.2.0) (2026-11-02)
 
 

@@ -1092,6 +1092,53 @@ fn test_experiment_flags_and_events_require_events_to_be_enabled(mock_server: Mo
 }
 
 #[rstest]
+fn test_offline_mode_sends_no_events(mock_server: MockServer) {
+    // Given
+    let events_mock = mock_server.mock(|when, then| {
+        when.method(POST).path("/events/v1/events");
+        then.status(202);
+    });
+    let handler =
+        offline_handler::LocalFileHandler::new("tests/fixtures/environment.json").unwrap();
+    let flagsmith_options = FlagsmithOptions {
+        offline_mode: true,
+        offline_handler: Some(Box::new(handler)),
+        enable_events: true,
+        events_api_url: mock_server.url("/events/"),
+        ..Default::default()
+    };
+    let flagsmith = Flagsmith::new(ENVIRONMENT_KEY.to_string(), flagsmith_options);
+
+    // When
+    let experiment_flag = flagsmith.get_experiment_flag(FEATURE_1_NAME, "user_123", None);
+    let event = flagsmith.track_event("checkout_completed", EventOptions::default());
+    let exposure = flagsmith.track_exposure_event(
+        FEATURE_1_NAME,
+        EventOptions {
+            identifier: Some("user_123".to_string()),
+            ..Default::default()
+        },
+    );
+    flagsmith.flush_events();
+    drop(flagsmith);
+
+    // Then
+    assert_eq!(
+        [
+            experiment_flag.unwrap_err().msg,
+            event.unwrap_err().msg,
+            exposure.unwrap_err().msg,
+        ],
+        [
+            "Cannot use experiment flags in offline mode.",
+            "Cannot track events in offline mode.",
+            "Cannot track exposure events in offline mode.",
+        ]
+    );
+    events_mock.assert_hits(0);
+}
+
+#[rstest]
 fn test_track_event_sends_the_event_to_flagsmith(mock_server: MockServer) {
     // Given
     let events_mock = mock_server.mock(|when, then| {

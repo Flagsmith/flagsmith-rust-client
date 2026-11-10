@@ -44,7 +44,7 @@ pub struct FlagsmithOptions {
     pub default_flag_handler: Option<fn(&str) -> Flag>,
     pub offline_handler: Option<Box<dyn offline_handler::OfflineHandler + Send + Sync>>,
     pub offline_mode: bool,
-    /// Sends tracking and exposure events to Flagsmith's events API.
+    /// Sends tracking and exposure events to Flagsmith's events API. Ignored in offline mode.
     pub enable_events: bool,
     pub events_api_url: String,
     pub events_flush_interval_mills: u64,
@@ -142,15 +142,16 @@ impl Flagsmith {
             )),
             false => None,
         };
-        let event_processor = flagsmith_options.enable_events.then(|| {
-            EventProcessor::new(
-                &environment_key,
-                &flagsmith_options.events_api_url,
-                timeout,
-                Duration::from_millis(flagsmith_options.events_flush_interval_mills),
-                flagsmith_options.events_max_buffer_size,
-            )
-        });
+        let event_processor = (flagsmith_options.enable_events && !flagsmith_options.offline_mode)
+            .then(|| {
+                EventProcessor::new(
+                    &environment_key,
+                    &flagsmith_options.events_api_url,
+                    timeout,
+                    Duration::from_millis(flagsmith_options.events_flush_interval_mills),
+                    flagsmith_options.events_max_buffer_size,
+                )
+            });
 
         // Put the environment model behind mutex to
         // to share it safely between threads
@@ -382,10 +383,13 @@ impl Flagsmith {
     }
 
     fn require_event_processor(&self, action: &str) -> Result<&EventProcessor, error::Error> {
-        self.event_processor.as_ref().ok_or(error::Error::new(
-            error::ErrorKind::FlagsmithClientError,
-            format!("Events must be enabled to {action}."),
-        ))
+        self.event_processor.as_ref().ok_or_else(|| {
+            let msg = match self.options.offline_mode {
+                true => format!("Cannot {action} in offline mode."),
+                false => format!("Events must be enabled to {action}."),
+            };
+            error::Error::new(error::ErrorKind::FlagsmithClientError, msg)
+        })
     }
 
     // Returns a list of segments that the given identity is part of

@@ -28,6 +28,16 @@ pub mod offline_handler;
 
 const DEFAULT_API_URL: &str = "https://edge.api.flagsmith.com/api/v1/";
 
+fn require_identifier(identifier: Option<&str>, subject: &str) -> Result<(), error::Error> {
+    match identifier.unwrap_or("").trim().is_empty() {
+        true => Err(error::Error::new(
+            error::ErrorKind::FlagsmithClientError,
+            format!("{subject} requires an identifier."),
+        )),
+        false => Ok(()),
+    }
+}
+
 // Get the SDK version from Cargo.toml at compile time, or default to "unknown"
 fn get_user_agent() -> String {
     let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
@@ -289,7 +299,7 @@ impl Flagsmith {
     }
     /// Returns the flag of a feature for an identity, and records the identity's exposure to
     /// the variant it was served when it is enrolled in a running experiment on the feature.
-    /// Experiments are only known to remote evaluation. Requires `enable_events`.
+    /// Experiments are only known to remote evaluation. Requires an identifier, and `enable_events`.
     pub fn get_experiment_flag(
         &self,
         feature_name: &str,
@@ -297,6 +307,7 @@ impl Flagsmith {
         traits: Option<Vec<SDKTrait>>,
     ) -> Result<Flag, error::Error> {
         let event_processor = self.require_event_processor("use experiment flags")?;
+        require_identifier(Some(identifier), "An experiment flag")?;
         let flag = self
             .get_identity_flags(identifier, traits.clone(), None)?
             .get_flag(feature_name)?;
@@ -358,18 +369,7 @@ impl Flagsmith {
         options: EventOptions,
     ) -> Result<(), error::Error> {
         let event_processor = self.require_event_processor("track exposure events")?;
-        if options
-            .identifier
-            .as_deref()
-            .unwrap_or("")
-            .trim()
-            .is_empty()
-        {
-            return Err(error::Error::new(
-                error::ErrorKind::FlagsmithClientError,
-                "An exposure event requires an identifier.".to_string(),
-            ));
-        }
+        require_identifier(options.identifier.as_deref(), "An exposure event")?;
         event_processor.track_exposure_event(feature_name, options);
         return Ok(());
     }

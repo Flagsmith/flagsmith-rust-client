@@ -1058,6 +1058,40 @@ fn test_get_experiment_flag_records_no_exposure_for_a_default_flag(
 }
 
 #[rstest]
+#[case::empty_identifier("")]
+#[case::blank_identifier(" ")]
+fn test_get_experiment_flag_requires_an_identifier(
+    mock_server: MockServer,
+    #[case] identifier: &str,
+) {
+    // Given
+    let identities_mock = mock_server.mock(|when, then| {
+        when.method(POST).path("/api/v1/identities/");
+        then.status(200)
+            .json_body(experiment_identities_json(true, Some("treatment"), true));
+    });
+    let events_mock = mock_server.mock(|when, then| {
+        when.method(POST).path("/events/v1/events");
+        then.status(202);
+    });
+    let flagsmith = events_flagsmith(&mock_server);
+
+    // When
+    let result = flagsmith.get_experiment_flag(FEATURE_1_NAME, identifier, None);
+    flagsmith.flush_events();
+
+    // Then
+    let error = result.unwrap_err();
+    assert_eq!(
+        error.kind,
+        flagsmith::error::ErrorKind::FlagsmithClientError
+    );
+    assert_eq!(error.msg, "An experiment flag requires an identifier.");
+    identities_mock.assert_hits(0);
+    events_mock.assert_hits(0);
+}
+
+#[rstest]
 fn test_experiment_flags_and_events_require_events_to_be_enabled(mock_server: MockServer) {
     // Given
     let flagsmith_options = FlagsmithOptions {

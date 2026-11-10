@@ -1102,14 +1102,9 @@ fn test_experiment_flags_and_events_require_events_to_be_enabled(mock_server: Mo
 
     // When
     let experiment_flag = flagsmith.get_experiment_flag(FEATURE_1_NAME, "user_123", None);
-    let event = flagsmith.track_event("checkout_completed", EventOptions::default());
-    let exposure = flagsmith.track_exposure_event(
-        FEATURE_1_NAME,
-        EventOptions {
-            identifier: Some("user_123".to_string()),
-            ..Default::default()
-        },
-    );
+    let event = flagsmith.track_event("checkout_completed", None, EventOptions::default());
+    let exposure =
+        flagsmith.track_exposure_event(FEATURE_1_NAME, "user_123", EventOptions::default());
 
     // Then
     for error in [
@@ -1145,14 +1140,9 @@ fn test_offline_mode_sends_no_events(mock_server: MockServer) {
 
     // When
     let experiment_flag = flagsmith.get_experiment_flag(FEATURE_1_NAME, "user_123", None);
-    let event = flagsmith.track_event("checkout_completed", EventOptions::default());
-    let exposure = flagsmith.track_exposure_event(
-        FEATURE_1_NAME,
-        EventOptions {
-            identifier: Some("user_123".to_string()),
-            ..Default::default()
-        },
-    );
+    let event = flagsmith.track_event("checkout_completed", None, EventOptions::default());
+    let exposure =
+        flagsmith.track_exposure_event(FEATURE_1_NAME, "user_123", EventOptions::default());
     flagsmith.flush_events();
     drop(flagsmith);
 
@@ -1196,8 +1186,8 @@ fn test_track_event_sends_the_event_to_flagsmith(mock_server: MockServer) {
     flagsmith
         .track_event(
             "checkout_completed",
+            Some("user_123"),
             EventOptions {
-                identifier: Some("user_123".to_string()),
                 value: Some(FlagsmithValue {
                     value: "42".to_string(),
                     value_type: FlagsmithValueType::Integer,
@@ -1222,7 +1212,7 @@ fn test_track_event_rejects_reserved_event_names(mock_server: MockServer) {
     let flagsmith = events_flagsmith(&mock_server);
 
     // When
-    let result = flagsmith.track_event("$flag_exposure", EventOptions::default());
+    let result = flagsmith.track_event("$flag_exposure", None, EventOptions::default());
 
     // Then
     let error = result.unwrap_err();
@@ -1257,8 +1247,8 @@ fn test_track_exposure_event_sends_a_flag_exposure_event_to_flagsmith(mock_serve
     flagsmith
         .track_exposure_event(
             "banner",
+            "user_123",
             EventOptions {
-                identifier: Some("user_123".to_string()),
                 value: Some(FlagsmithValue {
                     value: "control".to_string(),
                     value_type: FlagsmithValueType::String,
@@ -1278,23 +1268,17 @@ fn test_track_exposure_event_sends_a_flag_exposure_event_to_flagsmith(mock_serve
 }
 
 #[rstest]
-#[case::no_identifier(None)]
-#[case::blank_identifier(Some(" "))]
+#[case::empty_identifier("")]
+#[case::blank_identifier(" ")]
 fn test_track_exposure_event_requires_an_identifier(
     mock_server: MockServer,
-    #[case] identifier: Option<&str>,
+    #[case] identifier: &str,
 ) {
     // Given
     let flagsmith = events_flagsmith(&mock_server);
 
     // When
-    let result = flagsmith.track_exposure_event(
-        "banner",
-        EventOptions {
-            identifier: identifier.map(str::to_string),
-            ..Default::default()
-        },
-    );
+    let result = flagsmith.track_exposure_event("banner", identifier, EventOptions::default());
 
     // Then
     let error = result.unwrap_err();

@@ -28,8 +28,8 @@ pub mod offline_handler;
 
 const DEFAULT_API_URL: &str = "https://edge.api.flagsmith.com/api/v1/";
 
-fn require_identifier(identifier: Option<&str>, subject: &str) -> Result<(), error::Error> {
-    match identifier.unwrap_or("").trim().is_empty() {
+fn require_identifier(identifier: &str, subject: &str) -> Result<(), error::Error> {
+    match identifier.trim().is_empty() {
         true => Err(error::Error::new(
             error::ErrorKind::FlagsmithClientError,
             format!("{subject} requires an identifier."),
@@ -307,7 +307,7 @@ impl Flagsmith {
         traits: Option<Vec<SDKTrait>>,
     ) -> Result<Flag, error::Error> {
         let event_processor = self.require_event_processor("use experiment flags")?;
-        require_identifier(Some(identifier), "An experiment flag")?;
+        require_identifier(identifier, "An experiment flag")?;
         let flag = self
             .get_identity_flags(identifier, traits.clone(), None)?
             .get_flag(feature_name)?;
@@ -323,8 +323,8 @@ impl Flagsmith {
         match exposure {
             Ok((experiment_id, variant)) => event_processor.track_exposure_event(
                 feature_name,
+                identifier,
                 EventOptions {
-                    identifier: Some(identifier.to_string()),
                     value: Some(FlagsmithValue {
                         value: variant,
                         value_type: FlagsmithValueType::String,
@@ -344,9 +344,14 @@ impl Flagsmith {
         return Ok(flag);
     }
 
-    /// Records an event, such as a conversion, for Flagsmith's events API. Names starting
-    /// with `$` are reserved. Requires `enable_events`.
-    pub fn track_event(&self, event: &str, options: EventOptions) -> Result<(), error::Error> {
+    /// Records an event, such as a conversion, for Flagsmith's events API, optionally about
+    /// an identity. Names starting with `$` are reserved. Requires `enable_events`.
+    pub fn track_event(
+        &self,
+        event: &str,
+        identifier: Option<&str>,
+        options: EventOptions,
+    ) -> Result<(), error::Error> {
         let event_processor = self.require_event_processor("track events")?;
         if event.starts_with('$') {
             return Err(error::Error::new(
@@ -357,7 +362,7 @@ impl Flagsmith {
                 ),
             ));
         }
-        event_processor.track_event(event, options);
+        event_processor.track_event(event, identifier, options);
         return Ok(());
     }
 
@@ -366,11 +371,12 @@ impl Flagsmith {
     pub fn track_exposure_event(
         &self,
         feature_name: &str,
+        identifier: &str,
         options: EventOptions,
     ) -> Result<(), error::Error> {
         let event_processor = self.require_event_processor("track exposure events")?;
-        require_identifier(options.identifier.as_deref(), "An exposure event")?;
-        event_processor.track_exposure_event(feature_name, options);
+        require_identifier(identifier, "An exposure event")?;
+        event_processor.track_exposure_event(feature_name, identifier, options);
         return Ok(());
     }
 

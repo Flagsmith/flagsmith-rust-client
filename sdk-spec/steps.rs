@@ -109,12 +109,11 @@ pub fn track_event(
     metadata: HashMap<String, Value>,
 ) -> Result<(), Error> {
     let options = EventOptions {
-        identifier: Some(identifier),
         value: Some(value),
         metadata: Some(metadata),
         ..Default::default()
     };
-    flagsmith.track_event(&event, options)
+    flagsmith.track_event(&event, Some(&identifier), options)
 }
 
 // When the application tracks an exposure of feature "{feature}" for identity "{identifier}" with value {value} and metadata:
@@ -126,10 +125,9 @@ pub fn track_exposure_event(
     metadata: HashMap<String, Value>,
 ) -> Result<(), Error> {
     let options = EventOptions {
-        identifier: Some(identifier),
         value: Some(value),
         metadata: Some(metadata),
         ..Default::default()
     };
-    flagsmith.track_exposure_event(&feature, options)
+    flagsmith.track_exposure_event(&feature, &identifier, options)
 }

@@ -17,8 +17,6 @@ const EVENTS_ENDPOINT: &str = "v1/events";
 /// The optional fields of a tracked event.
 #[derive(Clone, Debug, Default)]
 pub struct EventOptions {
-    /// The identity the event is about. Required for exposure events.
-    pub identifier: Option<String>,
     /// The event's value, e.g. an order total, or the variant an identity was exposed to.
     pub value: Option<FlagsmithValue>,
     pub traits: Option<Vec<SDKTrait>>,
@@ -37,7 +35,12 @@ struct Event {
 }
 
 impl Event {
-    fn new(event: &str, feature_name: Option<&str>, options: EventOptions) -> Event {
+    fn new(
+        event: &str,
+        feature_name: Option<&str>,
+        identifier: Option<&str>,
+        options: EventOptions,
+    ) -> Event {
         let traits = options
             .traits
             .filter(|traits| !traits.is_empty())
@@ -55,7 +58,7 @@ impl Event {
         Event {
             event: event.to_string(),
             feature_name: feature_name.map(str::to_string),
-            identifier: options.identifier,
+            identifier: identifier.map(str::to_string),
             value: options
                 .value
                 .filter(|value| value.value_type != FlagsmithValueType::None)
@@ -218,12 +221,22 @@ impl EventProcessor {
         EventProcessor { tx }
     }
 
-    pub fn track_event(&self, event: &str, options: EventOptions) {
-        self.send(Event::new(event, None, options));
+    pub fn track_event(&self, event: &str, identifier: Option<&str>, options: EventOptions) {
+        self.send(Event::new(event, None, identifier, options));
     }
 
-    pub fn track_exposure_event(&self, feature_name: &str, options: EventOptions) {
-        self.send(Event::new(FLAG_EXPOSURE_EVENT, Some(feature_name), options));
+    pub fn track_exposure_event(
+        &self,
+        feature_name: &str,
+        identifier: &str,
+        options: EventOptions,
+    ) {
+        self.send(Event::new(
+            FLAG_EXPOSURE_EVENT,
+            Some(feature_name),
+            Some(identifier),
+            options,
+        ));
     }
 
     /// Sends the buffered events, and returns once they have been sent, kept for a retry
@@ -314,8 +327,8 @@ mod tests {
         Event::new(
             FLAG_EXPOSURE_EVENT,
             Some(feature_name),
+            Some(identifier),
             EventOptions {
-                identifier: Some(identifier.to_string()),
                 value: Some(string_value(value)),
                 ..Default::default()
             },
@@ -340,7 +353,6 @@ mod tests {
     fn event_carries_its_options_and_the_sdk_version() {
         // Given
         let options = EventOptions {
-            identifier: Some("user_123".to_string()),
             value: Some(FlagsmithValue {
                 value: "42".to_string(),
                 value_type: FlagsmithValueType::Integer,
@@ -356,7 +368,7 @@ mod tests {
         };
 
         // When
-        let event = Event::new("checkout_completed", None, options);
+        let event = Event::new("checkout_completed", None, Some("user_123"), options);
 
         // Then
         let mut json = serde_json::to_value(&event).unwrap();
@@ -380,6 +392,7 @@ mod tests {
         // When
         let event = Event::new(
             "signed_up",
+            None,
             None,
             EventOptions {
                 value: Some(FlagsmithValue::default()),
@@ -427,8 +440,8 @@ mod tests {
         let mut buffer = EventBuffer::new(10);
 
         // When
-        buffer.push(Event::new("clicked", None, EventOptions::default()));
-        buffer.push(Event::new("clicked", None, EventOptions::default()));
+        buffer.push(Event::new("clicked", None, None, EventOptions::default()));
+        buffer.push(Event::new("clicked", None, None, EventOptions::default()));
 
         // Then
         assert_eq!(buffer.events.len(), 2);
@@ -477,15 +490,13 @@ mod tests {
         let processor = processor(&server, 60_000, 100);
         processor.track_event(
             "checkout_completed",
-            EventOptions {
-                identifier: Some("user_123".to_string()),
-                ..Default::default()
-            },
+            Some("user_123"),
+            EventOptions::default(),
         );
         processor.track_exposure_event(
             "banner",
+            "user_123",
             EventOptions {
-                identifier: Some("user_123".to_string()),
                 value: Some(string_value("treatment")),
                 ..Default::default()
             },
@@ -526,7 +537,7 @@ mod tests {
         let processor = processor(&server, 50, 100);
 
         // When
-        processor.track_event("clicked", EventOptions::default());
+        processor.track_event("clicked", None, EventOptions::default());
         thread::sleep(Duration::from_millis(300));
 
         // Then
@@ -544,8 +555,8 @@ mod tests {
         let processor = processor(&server, 60_000, 2);
 
         // When
-        processor.track_event("clicked", EventOptions::default());
-        processor.track_event("clicked", EventOptions::default());
+        processor.track_event("clicked", None, EventOptions::default());
+        processor.track_event("clicked", None, EventOptions::default());
         thread::sleep(Duration::from_millis(100));
 
         // Then
@@ -561,7 +572,7 @@ mod tests {
             then.status(202);
         });
         let processor = processor(&server, 60_000, 100);
-        processor.track_event("clicked", EventOptions::default());
+        processor.track_event("clicked", None, EventOptions::default());
 
         // When
         drop(processor);
@@ -580,7 +591,7 @@ mod tests {
             then.status(503);
         });
         let processor = processor(&server, 60_000, 100);
-        processor.track_event("clicked", EventOptions::default());
+        processor.track_event("clicked", None, EventOptions::default());
         processor.flush();
         unavailable_mock.assert_hits(1);
         unavailable_mock.delete();
@@ -607,7 +618,7 @@ mod tests {
             then.status(400);
         });
         let processor = processor(&server, 60_000, 100);
-        processor.track_event("clicked", EventOptions::default());
+        processor.track_event("clicked", None, EventOptions::default());
         processor.flush();
 
         // When
@@ -627,7 +638,7 @@ mod tests {
             Duration::from_secs(60),
             100,
         );
-        processor.track_event("clicked", EventOptions::default());
+        processor.track_event("clicked", None, EventOptions::default());
 
         // When / Then
         processor.flush();

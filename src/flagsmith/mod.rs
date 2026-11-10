@@ -1,4 +1,5 @@
 use self::analytics::AnalyticsProcessor;
+use self::events::{EventOptions, EventProcessor, FLAG_EXPOSURE_EVENT};
 use self::models::{Flag, Flags};
 use super::error;
 use flagsmith_flag_engine::engine::get_evaluation_result;
@@ -9,20 +10,33 @@ use flagsmith_flag_engine::engine_eval::{
 use flagsmith_flag_engine::environments::Environment;
 use flagsmith_flag_engine::identities::Trait;
 use flagsmith_flag_engine::segments::Segment;
+use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
 use log::debug;
 use models::SDKTrait;
 use reqwest::header::{self, HeaderMap};
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
 
 mod analytics;
 
+pub mod events;
 pub mod models;
 pub mod offline_handler;
 
 const DEFAULT_API_URL: &str = "https://edge.api.flagsmith.com/api/v1/";
+
+fn require_identifier(identifier: &str, subject: &str) -> Result<(), error::Error> {
+    match identifier.trim().is_empty() {
+        true => Err(error::Error::new(
+            error::ErrorKind::FlagsmithClientError,
+            format!("{subject} requires an identifier."),
+        )),
+        false => Ok(()),
+    }
+}
 
 // Get the SDK version from Cargo.toml at compile time, or default to "unknown"
 fn get_user_agent() -> String {
@@ -40,6 +54,11 @@ pub struct FlagsmithOptions {
     pub default_flag_handler: Option<fn(&str) -> Flag>,
     pub offline_handler: Option<Box<dyn offline_handler::OfflineHandler + Send + Sync>>,
     pub offline_mode: bool,
+    /// Sends tracking and exposure events to Flagsmith's events API. Ignored in offline mode.
+    pub enable_events: bool,
+    pub events_api_url: String,
+    pub events_flush_interval_mills: u64,
+    pub events_max_buffer_size: usize,
 }
 
 impl Default for FlagsmithOptions {
@@ -54,6 +73,10 @@ impl Default for FlagsmithOptions {
             default_flag_handler: None,
             offline_handler: None,
             offline_mode: false,
+            enable_events: false,
+            events_api_url: events::DEFAULT_EVENTS_API_URL.to_string(),
+            events_flush_interval_mills: events::DEFAULT_EVENTS_FLUSH_INTERVAL_MILLS,
+            events_max_buffer_size: events::DEFAULT_EVENTS_MAX_BUFFER_SIZE,
         }
     }
 }
@@ -70,6 +93,7 @@ pub struct Flagsmith {
     // never take it.
     refresh_lock: Arc<Mutex<()>>,
     analytics_processor: Option<AnalyticsProcessor>,
+    event_processor: Option<EventProcessor>,
     _polling_thread_tx: SyncSender<u32>, // to trigger polling manager shutdown
 }
 
@@ -128,6 +152,16 @@ impl Flagsmith {
             )),
             false => None,
         };
+        let event_processor = (flagsmith_options.enable_events && !flagsmith_options.offline_mode)
+            .then(|| {
+                EventProcessor::new(
+                    &environment_key,
+                    &flagsmith_options.events_api_url,
+                    timeout,
+                    Duration::from_millis(flagsmith_options.events_flush_interval_mills),
+                    flagsmith_options.events_max_buffer_size,
+                )
+            });
 
         // Put the environment model behind mutex to
         // to share it safely between threads
@@ -148,6 +182,7 @@ impl Flagsmith {
             datastore: Arc::clone(&ds),
             refresh_lock: Arc::clone(&refresh_lock),
             analytics_processor,
+            event_processor,
             _polling_thread_tx: tx,
         };
 
@@ -262,6 +297,107 @@ impl Flagsmith {
             transient.unwrap_or(false),
         ));
     }
+    /// Returns the flag of a feature for an identity, and records the identity's exposure to
+    /// the variant it was served when it is enrolled in a running experiment on the feature.
+    /// Experiments are only known to remote evaluation. Requires an identifier, and `enable_events`.
+    pub fn get_experiment_flag(
+        &self,
+        feature_name: &str,
+        identifier: &str,
+        traits: Option<Vec<SDKTrait>>,
+    ) -> Result<Flag, error::Error> {
+        let event_processor = self.require_event_processor("use experiment flags")?;
+        require_identifier(identifier, "An experiment flag")?;
+        let flag = self
+            .get_identity_flags(identifier, traits.clone(), None)?
+            .get_flag(feature_name)?;
+        let exposure = match (&flag.experiment, &flag.variant) {
+            _ if flag.is_default => Err("the flag is a default flag"),
+            _ if !flag.enabled => Err("the flag is disabled"),
+            (Some(experiment), Some(variant)) if experiment.in_experiment => {
+                Ok((experiment.id, variant.clone()))
+            }
+            (Some(experiment), None) if experiment.in_experiment => Err("the flag has no variant"),
+            _ => Err("the identity is not in a running experiment"),
+        };
+        match exposure {
+            Ok((experiment_id, variant)) => event_processor.track_exposure_event(
+                feature_name,
+                identifier,
+                EventOptions {
+                    value: Some(FlagsmithValue {
+                        value: variant,
+                        value_type: FlagsmithValueType::String,
+                    }),
+                    traits,
+                    metadata: Some(HashMap::from([(
+                        "experiment_id".to_string(),
+                        json!(experiment_id),
+                    )])),
+                },
+            ),
+            Err(reason) => debug!(
+                "Not sending {} for feature {}: {}",
+                FLAG_EXPOSURE_EVENT, feature_name, reason
+            ),
+        }
+        return Ok(flag);
+    }
+
+    /// Records an event, such as a conversion, for Flagsmith's events API, optionally about
+    /// an identity. Names starting with `$` are reserved. Requires `enable_events`.
+    pub fn track_event(
+        &self,
+        event: &str,
+        identifier: Option<&str>,
+        options: EventOptions,
+    ) -> Result<(), error::Error> {
+        let event_processor = self.require_event_processor("track events")?;
+        if event.starts_with('$') {
+            return Err(error::Error::new(
+                error::ErrorKind::FlagsmithClientError,
+                format!(
+                    "Event names starting with \"$\" are reserved; use track_exposure_event to record {}.",
+                    FLAG_EXPOSURE_EVENT
+                ),
+            ));
+        }
+        event_processor.track_event(event, identifier, options);
+        return Ok(());
+    }
+
+    /// Records that an identity was exposed to a variant of a feature evaluated elsewhere,
+    /// as a `$flag_exposure` event. Requires an identifier, and `enable_events`.
+    pub fn track_exposure_event(
+        &self,
+        feature_name: &str,
+        identifier: &str,
+        options: EventOptions,
+    ) -> Result<(), error::Error> {
+        let event_processor = self.require_event_processor("track exposure events")?;
+        require_identifier(identifier, "An exposure event")?;
+        event_processor.track_exposure_event(feature_name, identifier, options);
+        return Ok(());
+    }
+
+    /// Sends the buffered events, and returns once they have been sent, kept for a retry or
+    /// dropped. Does nothing without `enable_events`.
+    pub fn flush_events(&self) {
+        if let Some(event_processor) = &self.event_processor {
+            event_processor.flush();
+        }
+    }
+
+    fn require_event_processor(&self, action: &str) -> Result<&EventProcessor, error::Error> {
+        self.event_processor.as_ref().ok_or_else(|| {
+            let msg = match self.options.offline_mode {
+                true => format!("Cannot {action} in offline mode."),
+                false => format!("Events must be enabled to {action}."),
+            };
+            error::Error::new(error::ErrorKind::FlagsmithClientError, msg)
+        })
+    }
+
     // Returns a list of segments that the given identity is part of
     pub fn get_identity_segments(
         &self,

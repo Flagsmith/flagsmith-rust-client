@@ -17,7 +17,7 @@ use models::SDKTrait;
 use reqwest::header::{self, HeaderMap};
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::mpsc::{self, SyncSender, TryRecvError};
+use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
 
@@ -61,10 +61,9 @@ pub struct FlagsmithOptions {
     pub events_api_url: String,
     pub events_flush_interval_mills: u64,
     pub events_max_buffer_size: usize,
-    /// How long a request to the events API may go unanswered before it is retried.
+    /// How long a request to the events API may go unanswered before it is retried. Zero
+    /// uses the default.
     pub events_request_timeout_mills: u64,
-    /// The longest wait before the first retry of a batch of events, doubling for each later one.
-    pub events_retry_backoff_mills: u64,
 }
 
 impl Default for FlagsmithOptions {
@@ -84,7 +83,6 @@ impl Default for FlagsmithOptions {
             events_flush_interval_mills: events::DEFAULT_EVENTS_FLUSH_INTERVAL_MILLS,
             events_max_buffer_size: events::DEFAULT_EVENTS_MAX_BUFFER_SIZE,
             events_request_timeout_mills: events::DEFAULT_EVENTS_REQUEST_TIMEOUT_MILLS,
-            events_retry_backoff_mills: events::DEFAULT_EVENTS_RETRY_BACKOFF_MILLS,
         }
     }
 }
@@ -169,7 +167,6 @@ impl Flagsmith {
                     Duration::from_millis(flagsmith_options.events_request_timeout_mills),
                     Duration::from_millis(flagsmith_options.events_flush_interval_mills),
                     flagsmith_options.events_max_buffer_size,
-                    Duration::from_millis(flagsmith_options.events_retry_backoff_mills),
                 )
             });
 
@@ -232,15 +229,15 @@ impl Flagsmith {
             // ...and continue updating in the background
             let ds = Arc::clone(&ds);
             let refresh_lock = Arc::clone(&refresh_lock);
+            // Woken by `close`, or by the client being dropped, rather than fetching once more.
             thread::spawn(move || loop {
-                match rx.try_recv() {
-                    Ok(_) | Err(TryRecvError::Disconnected) => {
+                match rx.recv_timeout(Duration::from_millis(environment_refresh_interval_mills)) {
+                    Ok(_) | Err(RecvTimeoutError::Disconnected) => {
                         debug!("shutting down polling manager");
                         break;
                     }
-                    Err(TryRecvError::Empty) => {}
+                    Err(RecvTimeoutError::Timeout) => {}
                 }
-                thread::sleep(Duration::from_millis(environment_refresh_interval_mills));
                 if let Err(e) = update_environment(&client, &ds, &refresh_lock, &environment_url) {
                     log::warn!(
                         "Failed to update environment: {}. Will retry on next interval.",
@@ -901,5 +898,68 @@ mod tests {
 
         // Then
         api_mock.assert();
+    }
+
+    #[test]
+    fn close_sends_the_buffered_events_and_drops_later_ones() {
+        // Given
+        let server = MockServer::start();
+        let events_mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1/events")
+                .json_body_partial(r#"{"events": [{"event": "checkout"}]}"#);
+            then.status(202);
+        });
+        let flagsmith = Flagsmith::new(
+            "ser.test_environment_key".to_string(),
+            FlagsmithOptions {
+                enable_events: true,
+                events_api_url: server.url("/"),
+                ..Default::default()
+            },
+        );
+        flagsmith
+            .track_event("checkout", Some("user_123"), EventOptions::default())
+            .unwrap();
+
+        // When
+        flagsmith.close(Duration::from_secs(5));
+        flagsmith
+            .track_event("checkout", Some("user_123"), EventOptions::default())
+            .unwrap();
+        flagsmith.flush_events();
+
+        // Then
+        events_mock.assert_hits(1);
+    }
+
+    #[test]
+    fn close_stops_polling_for_the_environment() {
+        // Given
+        let environment_key = "ser.test_environment_key";
+        let response_body: serde_json::Value = serde_json::from_str(ENVIRONMENT_JSON).unwrap();
+        let mock_server = MockServer::start();
+        let api_mock = mock_server.mock(|when, then| {
+            when.method(GET).path("/api/v1/environment-document/");
+            then.status(200).json_body(response_body);
+        });
+        let flagsmith = Flagsmith::new(
+            environment_key.to_string(),
+            FlagsmithOptions {
+                api_url: mock_server.url("/api/v1/"),
+                environment_refresh_interval_mills: 50,
+                enable_local_evaluation: true,
+                ..Default::default()
+            },
+        );
+
+        // When
+        flagsmith.close(Duration::from_secs(1));
+        let hits = api_mock.hits();
+        thread::sleep(Duration::from_millis(200));
+
+        // Then: no fetch after close, and flags still come from the last environment
+        assert_eq!(api_mock.hits(), hits);
+        assert!(flagsmith.get_environment_flags().is_ok());
     }
 }

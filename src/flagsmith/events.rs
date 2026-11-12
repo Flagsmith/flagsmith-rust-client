@@ -3,7 +3,9 @@ use flagsmith_flag_engine::types::{FlagsmithValue, FlagsmithValueType};
 use log::{debug, warn};
 use reqwest::header::{self, HeaderMap};
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -12,10 +14,9 @@ pub const DEFAULT_EVENTS_FLUSH_INTERVAL_MILLS: u64 = 10 * 1000;
 pub const DEFAULT_EVENTS_MAX_BUFFER_SIZE: usize = 1000;
 /// How long a request to the events API may go unanswered before it is abandoned and retried.
 pub const DEFAULT_EVENTS_REQUEST_TIMEOUT_MILLS: u64 = 3 * 1000;
-/// The wait before the first retry of a batch. It doubles for each later retry, up to
-/// `MAX_RETRY_BACKOFF`, and the actual wait is a random one up to it (full jitter).
-pub const DEFAULT_EVENTS_RETRY_BACKOFF_MILLS: u64 = 1000;
-const MAX_RETRY_BACKOFF: Duration = Duration::from_secs(10);
+/// The longest wait before the first retry of a batch, doubling for each later retry. The
+/// actual wait is a random one up to it (full jitter).
+const RETRY_BACKOFF: Duration = Duration::from_secs(1);
 /// Attempts to send a batch on each flush, before it is kept for the next one.
 const MAX_SEND_ATTEMPTS: u32 = 3;
 /// The event recorded when an identity is exposed to a variant of a feature.
@@ -97,7 +98,7 @@ struct ExposureKey {
 enum Message {
     Track(Event),
     Flush(flume::Sender<()>),
-    /// Sends the buffered events until the deadline, then stops the processor.
+    /// Sends the buffered events until the deadline, then stops sending.
     Close(Instant, flume::Sender<()>),
 }
 
@@ -116,20 +117,37 @@ enum SendOutcome {
     Unauthorised,
 }
 
+/// Whether the processor sends events.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum State {
+    Sending,
+    /// The client was closed.
+    Closed,
+    /// The events API refused the environment key.
+    Refused,
+}
+
 /// Events waiting to be sent. Equal exposures add no information, so only the first one
 /// waiting is kept.
 struct EventBuffer {
-    events: Vec<Event>,
+    events: VecDeque<Event>,
     exposures: HashSet<ExposureKey>,
     max_size: usize,
+    /// The events are a batch that failed, kept for the next flush: a full buffer drops its
+    /// oldest event rather than send it again.
+    held: bool,
+    /// Events dropped since last reported.
+    dropped: usize,
 }
 
 impl EventBuffer {
     fn new(max_size: usize) -> EventBuffer {
         EventBuffer {
-            events: vec![],
+            events: VecDeque::new(),
             exposures: HashSet::new(),
             max_size: max_size.max(1),
+            held: false,
+            dropped: 0,
         }
     }
 
@@ -143,33 +161,60 @@ impl EventBuffer {
                 return;
             }
         }
-        if self.events.len() >= self.max_size {
-            let oldest = self.events.remove(0);
-            if let Some(key) = oldest.exposure_key() {
+        if self.is_full() {
+            if let Some(key) = self.events.pop_front().and_then(|e| e.exposure_key()) {
                 self.exposures.remove(&key);
             }
-            warn!("Events buffer is full; dropped the oldest event");
+            self.dropped += 1;
         }
-        self.events.push(event);
+        self.events.push_back(event);
+    }
+
+    fn is_full(&self) -> bool {
+        self.events.len() >= self.max_size
     }
 
     fn clear(&mut self) {
         self.events.clear();
         self.exposures.clear();
+        self.held = false;
     }
 }
 
 /// Buffers tracking and exposure events, and sends them to Flagsmith's events API in
-/// batches: on a timer, on `flush`, on `close`, and when dropped. One batch is in flight at a
-/// time. A batch that fails is retried with backoff, then kept for the next flush, ahead of
-/// events tracked since; a full buffer drops its oldest event.
+/// batches: on a timer, when an event arrives at a full buffer, on `flush`, on `close`, and
+/// when dropped. One batch is in flight at a time. A batch that fails is retried with backoff,
+/// then kept for the next flush, ahead of events tracked since; while it is kept, a full
+/// buffer drops its oldest event. Tracking never blocks: events arriving faster than they are
+/// buffered are dropped.
 #[derive(Clone, Debug)]
 pub struct EventProcessor {
     tx: flume::Sender<Message>,
+    /// Events dropped because they arrived faster than they could be buffered.
+    dropped: Arc<AtomicUsize>,
 }
 
 impl EventProcessor {
+    /// `request_timeout` is how long a request to the events API may go unanswered before it
+    /// is retried; zero uses `DEFAULT_EVENTS_REQUEST_TIMEOUT_MILLS`.
     pub fn new(
+        environment_key: &str,
+        events_api_url: &str,
+        request_timeout: Duration,
+        flush_interval: Duration,
+        max_buffer_size: usize,
+    ) -> Self {
+        Self::with_retry_backoff(
+            environment_key,
+            events_api_url,
+            request_timeout,
+            flush_interval,
+            max_buffer_size,
+            RETRY_BACKOFF,
+        )
+    }
+
+    pub(crate) fn with_retry_backoff(
         environment_key: &str,
         events_api_url: &str,
         request_timeout: Duration,
@@ -197,22 +242,38 @@ impl EventProcessor {
             "/"
         };
         let endpoint = format!("{events_api_url}{separator}{EVENTS_ENDPOINT}");
+        let request_timeout = if request_timeout.is_zero() {
+            warn!("An events request timeout of zero would send no events; using the default");
+            Duration::from_millis(DEFAULT_EVENTS_REQUEST_TIMEOUT_MILLS)
+        } else {
+            request_timeout
+        };
 
         let sender = Sender {
             client,
             endpoint,
             request_timeout,
             retry_backoff,
-            stopped: false,
+            state: State::Sending,
         };
+        let buffer = EventBuffer::new(max_buffer_size);
+        let dropped = Arc::new(AtomicUsize::new(0));
 
-        let (tx, rx) = flume::unbounded();
+        // Room for bursts of events, and for a full buffer of them while a batch is in flight.
+        let (tx, rx) = flume::bounded(buffer.max_size.max(DEFAULT_EVENTS_MAX_BUFFER_SIZE));
+        let worker = Worker {
+            sender,
+            buffer,
+            flush_interval,
+            last_flushed: Instant::now(),
+            dropped: Arc::clone(&dropped),
+        };
         thread::Builder::new()
             .name("Event Processor".to_string())
-            .spawn(move || run(sender, rx, flush_interval, max_buffer_size))
+            .spawn(move || worker.run(rx))
             .expect("Failed to start event processor thread");
 
-        EventProcessor { tx }
+        EventProcessor { tx, dropped }
     }
 
     pub fn track_event(&self, event: &str, identifier: Option<&str>, options: EventOptions) {
@@ -242,64 +303,104 @@ impl EventProcessor {
         }
     }
 
-    /// Sends the buffered events, retries included, and stops the processor. Returns by the
+    /// Sends the buffered events, retries included, and stops sending. Returns by the
     /// timeout; events still unsent then are dropped, as are events tracked afterwards.
     pub fn close(&self, timeout: Duration) {
         let deadline = Instant::now() + timeout;
         let (done_tx, done_rx) = flume::bounded(1);
-        if self.tx.send(Message::Close(deadline, done_tx)).is_ok() {
+        if self
+            .tx
+            .send_deadline(Message::Close(deadline, done_tx), deadline)
+            .is_ok()
+        {
             let _ = done_rx.recv_deadline(deadline);
         }
     }
 
     fn send(&self, event: Event) {
-        if self.tx.send(Message::Track(event)).is_err() {
-            warn!("Event processor has stopped; dropped an event");
+        match self.tx.try_send(Message::Track(event)) {
+            Ok(()) => {}
+            Err(flume::TrySendError::Full(_)) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(flume::TrySendError::Disconnected(_)) => {
+                warn!("Event processor has stopped; dropped an event");
+            }
         }
     }
 }
 
-fn run(
-    mut sender: Sender,
-    rx: flume::Receiver<Message>,
+/// The event processor's thread: buffers the events it is sent, and sends them on.
+struct Worker {
+    sender: Sender,
+    buffer: EventBuffer,
     flush_interval: Duration,
-    max_buffer_size: usize,
-) {
-    let mut buffer = EventBuffer::new(max_buffer_size);
-    let mut last_flushed = Instant::now();
-    loop {
-        match rx.recv_timeout(flush_interval.saturating_sub(last_flushed.elapsed())) {
-            Ok(Message::Track(event)) if sender.stopped => {
-                debug!("Event tracking has stopped; dropped {:?}", event.event);
+    last_flushed: Instant,
+    /// Shared with `EventProcessor`: events it could not hand over.
+    dropped: Arc<AtomicUsize>,
+}
+
+impl Worker {
+    fn run(mut self, rx: flume::Receiver<Message>) {
+        loop {
+            // Checked on every message, so steady tracking cannot hold the timer off.
+            let until_flush = self
+                .flush_interval
+                .saturating_sub(self.last_flushed.elapsed());
+            if until_flush.is_zero() {
+                self.flush(None);
+                continue;
             }
-            Ok(Message::Track(event)) => buffer.push(event),
-            Ok(Message::Flush(done)) => {
-                sender.flush(&mut buffer, None);
-                last_flushed = Instant::now();
-                let _ = done.send(());
-            }
-            Ok(Message::Close(deadline, done)) => {
-                sender.flush(&mut buffer, Some(deadline));
-                if !buffer.events.is_empty() {
-                    warn!(
-                        "Closed the client with {} events unsent; dropped them",
-                        buffer.events.len()
-                    );
+            match rx.recv_timeout(until_flush) {
+                Ok(Message::Track(event)) => self.track(event),
+                Ok(Message::Flush(done)) => {
+                    self.flush(None);
+                    let _ = done.send(());
                 }
-                buffer.clear();
-                // Not shutting down yet: the client may still flush, or track events to drop.
-                sender.stopped = true;
-                let _ = done.send(());
+                Ok(Message::Close(deadline, done)) => {
+                    self.flush(Some(deadline));
+                    self.buffer.dropped += self.buffer.events.len();
+                    self.buffer.clear();
+                    self.report_dropped();
+                    // Not shutting down yet: the client may still flush, or track events to drop.
+                    self.sender.state = State::Closed;
+                    let _ = done.send(());
+                }
+                Err(flume::RecvTimeoutError::Timeout) => {}
+                Err(flume::RecvTimeoutError::Disconnected) => {
+                    debug!("Shutting down event processor");
+                    self.flush(None);
+                    break;
+                }
             }
-            Err(flume::RecvTimeoutError::Timeout) => {
-                sender.flush(&mut buffer, None);
-                last_flushed = Instant::now();
-            }
-            Err(flume::RecvTimeoutError::Disconnected) => {
-                debug!("Shutting down event processor");
-                sender.flush(&mut buffer, None);
-                break;
-            }
+        }
+    }
+
+    fn track(&mut self, event: Event) {
+        if self.sender.state != State::Sending {
+            self.buffer.dropped += 1;
+            return;
+        }
+        // Send a full buffer rather than drop an event from it, unless it is a batch that
+        // failed: that waits for the next flush.
+        if self.buffer.is_full() && !self.buffer.held {
+            self.flush(None);
+        }
+        self.buffer.push(event);
+    }
+
+    fn flush(&mut self, deadline: Option<Instant>) {
+        self.report_dropped();
+        self.sender.flush(&mut self.buffer, deadline);
+        self.last_flushed = Instant::now();
+    }
+
+    /// Logs the events dropped since last reported, in one warning.
+    fn report_dropped(&mut self) {
+        let dropped =
+            std::mem::take(&mut self.buffer.dropped) + self.dropped.swap(0, Ordering::Relaxed);
+        if dropped > 0 {
+            warn!("Dropped {dropped} events: the events buffer was full, or tracking had stopped");
         }
     }
 }
@@ -310,9 +411,7 @@ struct Sender {
     endpoint: String,
     request_timeout: Duration,
     retry_backoff: Duration,
-    /// The client was closed, or the events API refused the environment key: no more events
-    /// are sent.
-    stopped: bool,
+    state: State,
 }
 
 impl Sender {
@@ -320,7 +419,7 @@ impl Sender {
     /// rejected, or out of attempts, or until the deadline. Then the batch is either cleared
     /// from the buffer or kept in it for the next flush.
     fn flush(&mut self, buffer: &mut EventBuffer, deadline: Option<Instant>) {
-        if self.stopped || buffer.events.is_empty() {
+        if self.state != State::Sending || buffer.events.is_empty() {
             return;
         }
         let count = buffer.events.len();
@@ -333,6 +432,7 @@ impl Sender {
                 None => self.request_timeout,
             };
             if timeout.is_zero() {
+                buffer.held = true;
                 return;
             }
             match self.post(&buffer.events, timeout) {
@@ -343,7 +443,7 @@ impl Sender {
                 }
                 SendOutcome::Unauthorised => {
                     warn!("Events API refused the environment key; stopped tracking events");
-                    self.stopped = true;
+                    self.state = State::Refused;
                     return buffer.clear();
                 }
                 SendOutcome::Failed { server_error } if attempt >= MAX_SEND_ATTEMPTS => {
@@ -352,6 +452,7 @@ impl Sender {
                         buffer.clear();
                     } else {
                         warn!("Failed to send {count} events; keeping them for the next flush");
+                        buffer.held = true;
                     }
                     return;
                 }
@@ -359,6 +460,7 @@ impl Sender {
             }
             let wait = retry_wait(self.retry_backoff, attempt);
             if deadline.is_some_and(|deadline| Instant::now() + wait >= deadline) {
+                buffer.held = true;
                 return;
             }
             thread::sleep(wait);
@@ -366,7 +468,7 @@ impl Sender {
         }
     }
 
-    fn post(&self, events: &[Event], timeout: Duration) -> SendOutcome {
+    fn post(&self, events: &VecDeque<Event>, timeout: Duration) -> SendOutcome {
         let body = serde_json::json!({ "events": events });
         let response = match self
             .client
@@ -417,12 +519,9 @@ fn outcome_of_status(status: reqwest::StatusCode) -> SendOutcome {
     }
 }
 
-/// The longest wait before retry `retry` (from 1): `backoff`, doubling for each later retry,
-/// up to `MAX_RETRY_BACKOFF`.
+/// The longest wait before retry `retry` (from 1): `backoff`, doubling for each later retry.
 fn retry_backoff(backoff: Duration, retry: u32) -> Duration {
-    backoff
-        .saturating_mul(2u32.saturating_pow(retry.saturating_sub(1)))
-        .min(MAX_RETRY_BACKOFF.max(backoff))
+    backoff.saturating_mul(2u32.saturating_pow(retry.saturating_sub(1)))
 }
 
 /// A random wait up to the backoff (full jitter), so that clients failing together do not
@@ -464,7 +563,7 @@ mod tests {
         flush_interval_mills: u64,
         max_buffer_size: usize,
     ) -> EventProcessor {
-        EventProcessor::new(
+        EventProcessor::with_retry_backoff(
             ENVIRONMENT_KEY,
             &server.url("/"),
             Duration::from_secs(10),
@@ -474,7 +573,8 @@ mod tests {
         )
     }
 
-    /// Answers the events API's requests with `statuses` in order, then with 202.
+    /// Answers the events API's requests with `statuses` in order, then with 202. A status of
+    /// 0 closes the connection without answering.
     fn events_api(statuses: &'static [u16]) -> (std::net::SocketAddr, Arc<Mutex<Vec<String>>>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
@@ -487,6 +587,9 @@ mod tests {
                 let body = read_request_body(&mut stream);
                 received.lock().unwrap().push(body);
                 let status = statuses.next().unwrap_or(202);
+                if status == 0 {
+                    continue;
+                }
                 let response = format!(
                     "HTTP/1.1 {status} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 );
@@ -534,7 +637,7 @@ mod tests {
     }
 
     fn processor_for(address: std::net::SocketAddr) -> EventProcessor {
-        EventProcessor::new(
+        EventProcessor::with_retry_backoff(
             ENVIRONMENT_KEY,
             &format!("http://{address}/"),
             Duration::from_secs(10),
@@ -660,6 +763,7 @@ mod tests {
             .map(|e| e.identifier.clone().unwrap())
             .collect();
         assert_eq!(identifiers, vec!["user_3", "user_1"]);
+        assert_eq!(buffer.dropped, 2);
     }
 
     #[test]
@@ -849,7 +953,7 @@ mod tests {
     fn a_full_buffer_waiting_for_a_retry_drops_its_oldest_event() {
         // Given
         let (address, bodies) = events_api(&[503, 503, 503]);
-        let processor = EventProcessor::new(
+        let processor = EventProcessor::with_retry_backoff(
             ENVIRONMENT_KEY,
             &format!("http://{address}/"),
             Duration::from_secs(10),
@@ -865,11 +969,124 @@ mod tests {
         // When
         processor.flush();
 
+        // Then: event_3 dropped event_1 rather than send the failed batch again
+        let mut expected = vec![vec!["event_1", "event_2"]; 3];
+        expected.push(vec!["event_2", "event_3"]);
+        assert_eq!(sent_event_names(&bodies), expected);
+    }
+
+    #[test]
+    fn a_full_buffer_is_sent_rather_than_drop_an_event() {
+        // Given
+        let (address, bodies) = events_api(&[]);
+        let processor = EventProcessor::with_retry_backoff(
+            ENVIRONMENT_KEY,
+            &format!("http://{address}/"),
+            Duration::from_secs(10),
+            Duration::from_secs(60),
+            2,
+            Duration::from_millis(1),
+        );
+        processor.track_event("event_1", None, EventOptions::default());
+        processor.track_event("event_2", None, EventOptions::default());
+
+        // When
+        processor.track_event("event_3", None, EventOptions::default());
+        processor.flush();
+
         // Then
         assert_eq!(
-            sent_event_names(&bodies).last().unwrap(),
-            &vec!["event_2", "event_3"]
+            sent_event_names(&bodies),
+            vec![vec!["event_1", "event_2"], vec!["event_3"]]
         );
+    }
+
+    #[test]
+    fn steady_tracking_does_not_hold_off_the_flush_interval() {
+        // Given
+        let (address, bodies) = events_api(&[]);
+        let processor = EventProcessor::with_retry_backoff(
+            ENVIRONMENT_KEY,
+            &format!("http://{address}/"),
+            Duration::from_secs(10),
+            Duration::from_millis(50),
+            1000,
+            Duration::from_millis(1),
+        );
+
+        // When: an event every millisecond, for several flush intervals
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_millis(400) {
+            processor.track_event("clicked", None, EventOptions::default());
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        // Then
+        assert!(sent_event_names(&bodies).len() >= 2);
+    }
+
+    #[test]
+    fn tracking_does_not_block_while_a_batch_is_in_flight() {
+        // Given: a batch in flight to an events API that never answers
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let _connections: Vec<_> = listener.incoming().collect();
+        });
+        let processor = EventProcessor::with_retry_backoff(
+            ENVIRONMENT_KEY,
+            &format!("http://{address}/"),
+            Duration::from_secs(10),
+            Duration::from_millis(10),
+            10,
+            Duration::from_millis(1),
+        );
+        processor.track_event("clicked", None, EventOptions::default());
+        thread::sleep(Duration::from_millis(100));
+
+        // When
+        let started = Instant::now();
+        for _ in 0..5000 {
+            processor.track_event("clicked", None, EventOptions::default());
+        }
+
+        // Then: events beyond what the channel holds are dropped, and counted
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(processor.dropped.load(Ordering::Relaxed) > 0);
+    }
+
+    #[test]
+    fn a_closed_connection_is_retried() {
+        // Given
+        let (address, bodies) = events_api(&[0]);
+        let processor = processor_for(address);
+        processor.track_event("clicked", None, EventOptions::default());
+
+        // When
+        processor.flush();
+
+        // Then
+        assert_eq!(sent_event_names(&bodies), vec![vec!["clicked"]; 2]);
+    }
+
+    #[test]
+    fn a_request_timeout_of_zero_uses_the_default() {
+        // Given
+        let (address, bodies) = events_api(&[]);
+        let processor = EventProcessor::new(
+            ENVIRONMENT_KEY,
+            &format!("http://{address}/"),
+            Duration::ZERO,
+            Duration::from_secs(60),
+            100,
+        );
+        processor.track_event("clicked", None, EventOptions::default());
+
+        // When
+        processor.flush();
+
+        // Then
+        assert_eq!(sent_event_names(&bodies), vec![vec!["clicked"]]);
     }
 
     #[test]
@@ -884,7 +1101,7 @@ mod tests {
                 accepted.lock().unwrap().push(stream.unwrap());
             }
         });
-        let processor = EventProcessor::new(
+        let processor = EventProcessor::with_retry_backoff(
             ENVIRONMENT_KEY,
             &format!("http://{address}/"),
             Duration::from_millis(50),
@@ -927,6 +1144,58 @@ mod tests {
         });
         let processor = processor_for(address);
         processor.track_event("checkout", None, EventOptions::default());
+
+        // When
+        let started = Instant::now();
+        processor.close(Duration::from_millis(200));
+
+        // Then
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn close_returns_within_its_timeout_while_a_batch_waits_to_be_retried() {
+        // Given: a flush backing off before its retry
+        let (address, _bodies) = events_api(&[503, 503, 503]);
+        let processor = EventProcessor::with_retry_backoff(
+            ENVIRONMENT_KEY,
+            &format!("http://{address}/"),
+            Duration::from_secs(10),
+            Duration::from_secs(60),
+            100,
+            Duration::from_secs(30),
+        );
+        processor.track_event("checkout", None, EventOptions::default());
+        let flushing = processor.clone();
+        thread::spawn(move || flushing.flush());
+        thread::sleep(Duration::from_millis(100));
+
+        // When
+        let started = Instant::now();
+        processor.close(Duration::from_millis(200));
+
+        // Then
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn close_returns_within_its_timeout_during_a_timed_flush() {
+        // Given: a timed flush waiting on an events API that never answers
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let _connections: Vec<_> = listener.incoming().collect();
+        });
+        let processor = EventProcessor::with_retry_backoff(
+            ENVIRONMENT_KEY,
+            &format!("http://{address}/"),
+            Duration::from_secs(10),
+            Duration::from_millis(50),
+            100,
+            Duration::from_millis(1),
+        );
+        processor.track_event("checkout", None, EventOptions::default());
+        thread::sleep(Duration::from_millis(150));
 
         // When
         let started = Instant::now();
@@ -985,13 +1254,11 @@ mod tests {
     }
 
     #[test]
-    fn retry_backoff_doubles_up_to_its_maximum() {
+    fn retry_backoff_doubles() {
         let backoff = Duration::from_secs(1);
         assert_eq!(retry_backoff(backoff, 1), Duration::from_secs(1));
         assert_eq!(retry_backoff(backoff, 2), Duration::from_secs(2));
         assert_eq!(retry_backoff(backoff, 3), Duration::from_secs(4));
-        assert_eq!(retry_backoff(backoff, 5), MAX_RETRY_BACKOFF);
-        assert_eq!(retry_backoff(backoff, 100), MAX_RETRY_BACKOFF);
     }
 
     #[test]
@@ -1023,7 +1290,7 @@ mod tests {
     #[test]
     fn flush_survives_an_unreachable_events_api() {
         // Given
-        let processor = EventProcessor::new(
+        let processor = EventProcessor::with_retry_backoff(
             ENVIRONMENT_KEY,
             "http://127.0.0.1:1/",
             Duration::from_millis(100),

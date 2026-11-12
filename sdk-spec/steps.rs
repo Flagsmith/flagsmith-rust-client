@@ -3,6 +3,7 @@
 //! Each function implements the Gherkin step in the comment above it.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use flagsmith::error::Error;
 use flagsmith::flagsmith::events::EventOptions;
@@ -72,6 +73,22 @@ pub fn create_client_with_events(
     Flagsmith::new(environment_key, options)
 }
 
+// Create the SDK client with local evaluation and events enabled
+pub fn create_client_with_local_evaluation_and_events(
+    environment_key: String,
+    api_url: String,
+    events_api_url: String,
+) -> Flagsmith {
+    let options = FlagsmithOptions {
+        api_url,
+        enable_local_evaluation: true,
+        enable_events: true,
+        events_api_url,
+        ..Default::default()
+    };
+    Flagsmith::new(environment_key, options)
+}
+
 // When the application gets the environment flags
 pub fn get_environment_flags(flagsmith: &Flagsmith) -> Result<Vec<SpecFlag>, Error> {
     flagsmith.get_environment_flags().map(as_spec_flags)
@@ -130,4 +147,30 @@ pub fn track_exposure_event(
         ..Default::default()
     };
     flagsmith.track_exposure_event(&feature, &identifier, options)
+}
+
+// When the application tracks events "event_{first}" to "event_{last}" for identity "{identifier}"
+pub fn track_events(
+    flagsmith: &Flagsmith,
+    first: u32,
+    last: u32,
+    identifier: String,
+) -> Result<(), Error> {
+    (first..=last).try_for_each(|number| {
+        flagsmith.track_event(
+            &format!("event_{number}"),
+            Some(&identifier),
+            EventOptions::default(),
+        )
+    })
+}
+
+// When the application flushes events
+pub fn flush_events(flagsmith: &Flagsmith) {
+    flagsmith.flush_events()
+}
+
+// When the application closes the client with a timeout of {timeout} seconds
+pub fn close(flagsmith: &Flagsmith, timeout: f64) {
+    flagsmith.close(Duration::from_secs_f64(timeout))
 }

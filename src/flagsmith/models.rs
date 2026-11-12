@@ -16,10 +16,10 @@ pub struct Flag {
     pub is_default: bool,
     pub feature_id: u32,
     pub feature_name: String,
-    /// The key of the multivariate variant the identity was served. Only set by remote
-    /// identity evaluation.
+    /// The key of the multivariate variant the identity was served, or "control" when it was
+    /// served none. Only set by identity evaluation.
     pub variant: Option<String>,
-    /// The running experiment on the feature. Only set by remote identity evaluation.
+    /// The running experiment on the feature. Only set by identity evaluation.
     pub experiment: Option<ExperimentMetadata>,
 }
 
@@ -147,6 +147,7 @@ impl Flags {
                 enabled: flag_result.enabled,
                 value: flag_result.value.clone(),
                 feature_id: flag_result.metadata.feature_id,
+                variant: flag_result.variant.clone(),
                 ..Default::default()
             };
             flags.insert(feature_name.clone(), flag);
@@ -156,6 +157,17 @@ impl Flags {
             analytics_processor,
             default_flag_handler,
         };
+    }
+
+    /// Sets each flag's experiment to the one `experiment_of` gives for its feature.
+    pub(crate) fn with_experiments(
+        mut self,
+        experiment_of: impl Fn(&str) -> Option<ExperimentMetadata>,
+    ) -> Flags {
+        for (feature_name, flag) in self.flags.iter_mut() {
+            flag.experiment = experiment_of(feature_name);
+        }
+        self
     }
 
     // Returns a vector of all `Flag` structs

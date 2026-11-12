@@ -1,5 +1,6 @@
 use self::analytics::AnalyticsProcessor;
 use self::events::{EventOptions, EventProcessor, FLAG_EXPOSURE_EVENT};
+use self::experiments::DocumentExperiments;
 use self::models::{Flag, Flags};
 use super::error;
 use flagsmith_flag_engine::engine::get_evaluation_result;
@@ -21,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::{thread, time::Duration};
 
 mod analytics;
+mod experiments;
 
 pub mod events;
 pub mod models;
@@ -59,6 +61,10 @@ pub struct FlagsmithOptions {
     pub events_api_url: String,
     pub events_flush_interval_mills: u64,
     pub events_max_buffer_size: usize,
+    /// How long a request to the events API may go unanswered before it is retried.
+    pub events_request_timeout_mills: u64,
+    /// The longest wait before the first retry of a batch of events, doubling for each later one.
+    pub events_retry_backoff_mills: u64,
 }
 
 impl Default for FlagsmithOptions {
@@ -77,6 +83,8 @@ impl Default for FlagsmithOptions {
             events_api_url: events::DEFAULT_EVENTS_API_URL.to_string(),
             events_flush_interval_mills: events::DEFAULT_EVENTS_FLUSH_INTERVAL_MILLS,
             events_max_buffer_size: events::DEFAULT_EVENTS_MAX_BUFFER_SIZE,
+            events_request_timeout_mills: events::DEFAULT_EVENTS_REQUEST_TIMEOUT_MILLS,
+            events_retry_backoff_mills: events::DEFAULT_EVENTS_RETRY_BACKOFF_MILLS,
         }
     }
 }
@@ -101,6 +109,7 @@ struct DataStore {
     environment: Option<Environment>,
     evaluation_context: Option<EngineEvaluationContext>,
     identity_free_evaluation_context: Option<EngineEvaluationContext>,
+    experiments: DocumentExperiments,
 }
 
 impl Flagsmith {
@@ -157,9 +166,10 @@ impl Flagsmith {
                 EventProcessor::new(
                     &environment_key,
                     &flagsmith_options.events_api_url,
-                    timeout,
+                    Duration::from_millis(flagsmith_options.events_request_timeout_mills),
                     Duration::from_millis(flagsmith_options.events_flush_interval_mills),
                     flagsmith_options.events_max_buffer_size,
+                    Duration::from_millis(flagsmith_options.events_retry_backoff_mills),
                 )
             });
 
@@ -169,6 +179,7 @@ impl Flagsmith {
             environment: None,
             evaluation_context: None,
             identity_free_evaluation_context: None,
+            experiments: DocumentExperiments::default(),
         }));
         let refresh_lock = Arc::new(Mutex::new(()));
         let (tx, rx) = mpsc::sync_channel::<u32>(1);
@@ -286,6 +297,7 @@ impl Flagsmith {
                 let engine_traits: Vec<Trait> = traits.into_iter().map(|t| t.into()).collect();
                 return self.get_identity_flags_from_document(
                     eval_context,
+                    &data.experiments,
                     identifier,
                     engine_traits,
                 );
@@ -299,7 +311,7 @@ impl Flagsmith {
     }
     /// Returns the flag of a feature for an identity, and records the identity's exposure to
     /// the variant it was served when it is enrolled in a running experiment on the feature.
-    /// Experiments are only known to remote evaluation. Requires an identifier, and `enable_events`.
+    /// Requires an identifier, and `enable_events`.
     pub fn get_experiment_flag(
         &self,
         feature_name: &str,
@@ -385,6 +397,16 @@ impl Flagsmith {
     pub fn flush_events(&self) {
         if let Some(event_processor) = &self.event_processor {
             event_processor.flush();
+        }
+    }
+
+    /// Closes the client before the application stops, so that its events are not lost: sends
+    /// the buffered events, retries included, and stops polling for the environment. Returns
+    /// by the timeout; events still unsent then are dropped, as are events tracked afterwards.
+    pub fn close(&self, timeout: Duration) {
+        let _ = self._polling_thread_tx.try_send(1);
+        if let Some(event_processor) = &self.event_processor {
+            event_processor.close(timeout);
         }
     }
 
@@ -476,6 +498,7 @@ impl Flagsmith {
     fn get_identity_flags_from_document(
         &self,
         eval_context: &EngineEvaluationContext,
+        experiments: &DocumentExperiments,
         identifier: &str,
         traits: Vec<Trait>,
     ) -> Result<Flags, error::Error> {
@@ -487,7 +510,10 @@ impl Flagsmith {
             &result,
             self.analytics_processor.clone(),
             self.options.default_flag_handler,
-        );
+        )
+        .with_experiments(|feature_name| {
+            experiments.for_flag(&context_with_identity, &result, identifier, feature_name)
+        });
         return Ok(flags);
     }
 
@@ -553,17 +579,19 @@ impl Flagsmith {
 fn get_environment_from_api(
     client: &reqwest::blocking::Client,
     environment_url: String,
-) -> Result<Environment, error::Error> {
+) -> Result<(Environment, DocumentExperiments), error::Error> {
     let method = reqwest::Method::GET;
     let json_document = get_json_response(client, method, environment_url, None)?;
+    let experiments = DocumentExperiments::from_document(&json_document);
     // A document the engine cannot parse is an error, not a panic: the
     // caller keeps the last document it had.
-    serde_json::from_value(json_document).map_err(|e| {
+    let environment = serde_json::from_value(json_document).map_err(|e| {
         error::Error::new(
             error::ErrorKind::FlagsmithAPIError,
             format!("Unable to parse the environment document: {e}"),
         )
-    })
+    })?;
+    Ok((environment, experiments))
 }
 
 fn update_environment(
@@ -579,13 +607,14 @@ fn update_environment(
     let _refresh = refresh_lock
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let environment = get_environment_from_api(client, environment_url.clone())?;
+    let (environment, experiments) = get_environment_from_api(client, environment_url.clone())?;
     let eval_context = environment_to_context(environment.clone());
     let identity_free_eval_context = remove_identity_from_context(&eval_context);
     let mut data = datastore.lock().unwrap();
     data.identity_free_evaluation_context = Some(identity_free_eval_context);
     data.evaluation_context = Some(eval_context);
     data.environment = Some(environment);
+    data.experiments = experiments;
     return Ok(());
 }
 

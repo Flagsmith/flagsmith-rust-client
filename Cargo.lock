@@ -642,6 +642,7 @@ name = "flagsmith"
 version = "3.3.0"
 dependencies = [
  "chrono",
+ "fastrand",
  "flagsmith-flag-engine",
  "flume",
  "httpmock",

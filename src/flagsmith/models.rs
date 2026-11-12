@@ -159,15 +159,11 @@ impl Flags {
         };
     }
 
-    /// Sets each flag's experiment to the one `experiment_of` gives for its feature.
-    pub(crate) fn with_experiments(
-        mut self,
-        experiment_of: impl Fn(&str) -> Option<ExperimentMetadata>,
-    ) -> Flags {
-        for (feature_name, flag) in self.flags.iter_mut() {
-            flag.experiment = experiment_of(feature_name);
+    /// Sets the experiment the flag of a feature was evaluated under.
+    pub(crate) fn set_experiment(&mut self, feature_name: &str, experiment: ExperimentMetadata) {
+        if let Some(flag) = self.flags.get_mut(feature_name) {
+            flag.experiment = Some(experiment);
         }
-        self
     }
 
     // Returns a vector of all `Flag` structs

@@ -6,6 +6,7 @@
 //! its results, so they are read from the document and matched to the override it evaluated.
 
 use super::models::ExperimentMetadata;
+use flagsmith_flag_engine::engine_eval::context::SegmentContext;
 use flagsmith_flag_engine::engine_eval::{
     EngineEvaluationContext, EvaluationResult, SegmentSource,
 };
@@ -16,10 +17,13 @@ use std::collections::{HashMap, HashSet};
 pub(crate) struct DocumentExperiments {
     /// By feature name: the experiment on the environment's feature state.
     features: HashMap<String, ExperimentMetadata>,
-    /// By segment id and feature name: the experiment on the segment's override.
-    segment_overrides: HashMap<(i32, String), ExperimentMetadata>,
-    /// The identifiers and feature names of identity overrides, which carry no experiment.
-    identity_overrides: HashSet<(String, String)>,
+    /// By segment id, then feature name: the experiment on the segment's override.
+    segment_overrides: HashMap<i32, HashMap<String, ExperimentMetadata>>,
+    /// By identifier: the features of the identity's overrides, which carry no experiment.
+    identity_overrides: HashMap<String, HashSet<String>>,
+    /// The features with an experiment on any of their feature states: only their flags are
+    /// looked up, so evaluation costs nothing more for an environment running none.
+    feature_names: HashSet<String>,
 }
 
 #[derive(Deserialize)]
@@ -86,86 +90,103 @@ impl DocumentExperiments {
                 return DocumentExperiments::default();
             }
         };
+        let features: HashMap<_, _> = document
+            .feature_states
+            .into_iter()
+            .filter_map(DocumentFeatureState::experiment)
+            .collect();
+        let segment_overrides: HashMap<i32, HashMap<_, _>> = document
+            .project
+            .segments
+            .into_iter()
+            .map(|segment| {
+                let experiments: HashMap<_, _> = segment
+                    .feature_states
+                    .into_iter()
+                    .filter_map(DocumentFeatureState::experiment)
+                    .collect();
+                (segment.id, experiments)
+            })
+            .filter(|(_, experiments)| !experiments.is_empty())
+            .collect();
+        let feature_names = features
+            .keys()
+            .chain(segment_overrides.values().flat_map(HashMap::keys))
+            .cloned()
+            .collect();
+        let identity_overrides = document
+            .identity_overrides
+            .into_iter()
+            .map(|identity| {
+                let features = identity
+                    .identity_features
+                    .into_iter()
+                    .map(|feature_state| feature_state.feature.name)
+                    .collect();
+                (identity.identifier, features)
+            })
+            .collect();
         DocumentExperiments {
-            features: document
-                .feature_states
-                .into_iter()
-                .filter_map(DocumentFeatureState::experiment)
-                .collect(),
-            segment_overrides: document
-                .project
-                .segments
-                .into_iter()
-                .flat_map(|segment| {
-                    let id = segment.id;
-                    segment
-                        .feature_states
-                        .into_iter()
-                        .filter_map(DocumentFeatureState::experiment)
-                        .map(move |(feature_name, experiment)| ((id, feature_name), experiment))
-                })
-                .collect(),
-            identity_overrides: document
-                .identity_overrides
-                .into_iter()
-                .flat_map(|identity| {
-                    let identifier = identity.identifier;
-                    identity
-                        .identity_features
-                        .into_iter()
-                        .map(move |feature_state| (identifier.clone(), feature_state.feature.name))
-                })
-                .collect(),
+            features,
+            segment_overrides,
+            identity_overrides,
+            feature_names,
         }
     }
 
-    /// The experiment the identity's flag for the feature was evaluated under, given the
+    /// The experiments the identity's flags were evaluated under, by feature name, given the
     /// context and result of that evaluation.
-    pub(crate) fn for_flag(
-        &self,
+    pub(crate) fn for_identity<'a>(
+        &'a self,
         context: &EngineEvaluationContext,
         result: &EvaluationResult,
         identifier: &str,
-        feature_name: &str,
-    ) -> Option<ExperimentMetadata> {
-        // An identity override takes precedence over every segment override.
-        if self
-            .identity_overrides
-            .contains(&(identifier.to_string(), feature_name.to_string()))
-        {
-            return None;
+    ) -> Vec<(&'a str, ExperimentMetadata)> {
+        if self.feature_names.is_empty() {
+            return vec![];
         }
-        // The override the engine evaluated: the matched segments' highest priority one,
-        // the first seen winning a tie, as matched segments are in the order the engine saw them.
-        let mut winner: Option<(i32, f64)> = None;
-        for segment in &result.segments {
-            if segment.metadata.source != SegmentSource::Api {
+        let identity_overrides = self.identity_overrides.get(identifier);
+        // In the order the engine saw them, which breaks ties between overrides.
+        let matched_segments: Vec<(i32, &SegmentContext)> = result
+            .segments
+            .iter()
+            .filter(|segment| segment.metadata.source == SegmentSource::Api)
+            .filter_map(|segment| {
+                let segment_id = segment.metadata.segment_id?;
+                Some((segment_id, context.segments.get(&segment_id.to_string())?))
+            })
+            .collect();
+        self.feature_names
+            .iter()
+            // An identity override takes precedence over every segment override.
+            .filter(|feature_name| identity_overrides.is_none_or(|f| !f.contains(*feature_name)))
+            .filter_map(|feature_name| {
+                let experiment = match winning_segment(&matched_segments, feature_name) {
+                    Some(segment_id) => self.segment_overrides.get(&segment_id)?.get(feature_name),
+                    None => self.features.get(feature_name),
+                }?;
+                Some((feature_name.as_str(), experiment.clone()))
+            })
+            .collect()
+    }
+}
+
+/// The segment whose override of the feature the engine evaluated: the highest priority one,
+/// the first seen winning a tie.
+fn winning_segment(matched_segments: &[(i32, &SegmentContext)], feature_name: &str) -> Option<i32> {
+    let mut winner: Option<(i32, f64)> = None;
+    for (segment_id, segment_context) in matched_segments {
+        for feature_override in &segment_context.overrides {
+            if feature_override.name != feature_name {
                 continue;
             }
-            let Some(segment_id) = segment.metadata.segment_id else {
-                continue;
-            };
-            let Some(segment_context) = context.segments.get(&segment_id.to_string()) else {
-                continue;
-            };
-            for feature_override in &segment_context.overrides {
-                if feature_override.name != feature_name {
-                    continue;
-                }
-                let priority = feature_override.priority.unwrap_or(f64::INFINITY);
-                if winner.is_none_or(|(_, incumbent)| priority < incumbent) {
-                    winner = Some((segment_id, priority));
-                }
+            let priority = feature_override.priority.unwrap_or(f64::INFINITY);
+            if winner.is_none_or(|(_, incumbent)| priority < incumbent) {
+                winner = Some((*segment_id, priority));
             }
-        }
-        match winner {
-            Some((segment_id, _)) => self
-                .segment_overrides
-                .get(&(segment_id, feature_name.to_string()))
-                .cloned(),
-            None => self.features.get(feature_name).cloned(),
         }
     }
+    winner.map(|(segment_id, _)| segment_id)
 }
 
 #[cfg(test)]
@@ -241,7 +262,10 @@ mod tests {
             add_identity_to_context(&environment_to_context(environment), identifier, &traits);
         let result = get_evaluation_result(&context);
         DocumentExperiments::from_document(document)
-            .for_flag(&context, &result, identifier, "checkout")
+            .for_identity(&context, &result, identifier)
+            .into_iter()
+            .find(|(feature_name, _)| *feature_name == "checkout")
+            .map(|(_, experiment)| experiment)
     }
 
     fn enrolled() -> Vec<flagsmith_flag_engine::identities::Trait> {
@@ -312,7 +336,6 @@ mod tests {
         let experiments = DocumentExperiments::from_document(&document);
 
         // Then
-        assert!(experiments.features.is_empty());
-        assert!(experiments.segment_overrides.is_empty());
+        assert!(experiments.feature_names.is_empty());
     }
 }

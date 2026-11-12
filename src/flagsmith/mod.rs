@@ -506,14 +506,16 @@ impl Flagsmith {
 
         let result = get_evaluation_result(&context_with_identity);
 
-        let flags = Flags::from_evaluation_result(
+        let mut flags = Flags::from_evaluation_result(
             &result,
             self.analytics_processor.clone(),
             self.options.default_flag_handler,
-        )
-        .with_experiments(|feature_name| {
-            experiments.for_flag(&context_with_identity, &result, identifier, feature_name)
-        });
+        );
+        for (feature_name, experiment) in
+            experiments.for_identity(&context_with_identity, &result, identifier)
+        {
+            flags.set_experiment(feature_name, experiment);
+        }
         return Ok(flags);
     }
 

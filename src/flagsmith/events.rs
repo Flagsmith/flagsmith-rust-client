@@ -475,12 +475,12 @@ mod tests {
     }
 
     /// Answers the events API's requests with `statuses` in order, then with 202.
-    fn events_api(statuses: &[u16]) -> (std::net::SocketAddr, Arc<Mutex<Vec<String>>>) {
+    fn events_api(statuses: &'static [u16]) -> (std::net::SocketAddr, Arc<Mutex<Vec<String>>>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let bodies = Arc::new(Mutex::new(vec![]));
         let received = Arc::clone(&bodies);
-        let mut statuses = statuses.iter().copied().collect::<Vec<_>>().into_iter();
+        let mut statuses = statuses.iter().copied();
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let mut stream = stream.unwrap();
@@ -826,11 +826,13 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case(401)]
-    #[case(403)]
-    fn an_events_api_refusing_the_environment_key_stops_event_tracking(#[case] status: u16) {
+    #[case(&[401])]
+    #[case(&[403])]
+    fn an_events_api_refusing_the_environment_key_stops_event_tracking(
+        #[case] statuses: &'static [u16],
+    ) {
         // Given
-        let (address, bodies) = events_api(&[status]);
+        let (address, bodies) = events_api(statuses);
         let processor = processor_for(address);
         processor.track_event("add_to_cart", None, EventOptions::default());
         processor.flush();

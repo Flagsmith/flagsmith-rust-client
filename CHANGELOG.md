@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.3.0...v3.4.0) (2026-11-13)
+
+
+### Features
+
+* Retry event delivery and flush on close ([#84](https://github.com/Flagsmith/flagsmith-rust-client/issues/84)) ([848e08c](https://github.com/Flagsmith/flagsmith-rust-client/commit/848e08cf2955a09741a5fc2f5868d81ce1e56215))
+
 ## [3.3.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.2.0...v3.3.0) (2026-11-10)
 
 

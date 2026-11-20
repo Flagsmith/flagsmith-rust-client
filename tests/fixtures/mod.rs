@@ -104,7 +104,8 @@ pub fn flags_json() -> serde_json::Value {
                     "enabled": true,
                     "environment": 1,
                     "identity": null,
-                    "feature_segment": null
+                    "feature_segment": null,
+                    "reason": "STATIC"
                 }
     ]
         )
@@ -138,7 +139,8 @@ pub fn identities_json() -> serde_json::Value {
                         "enabled": true,
                         "environment": 1,
                         "identity": null,
-                        "feature_segment": null
+                        "feature_segment": null,
+                        "reason": "DEFAULT"
                     }
                 ]
     }

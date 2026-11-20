@@ -21,6 +21,9 @@ pub struct Flag {
     pub variant: Option<String>,
     /// The running experiment on the feature. Only set by identity evaluation.
     pub experiment: Option<ExperimentMetadata>,
+    /// Why the flag was evaluated to its value, e.g. "STATIC", "DEFAULT",
+    /// "TARGETING_MATCH; segment=premium_users" or "SPLIT; weight=50".
+    pub reason: Option<String>,
 }
 
 /// The running experiment a flag was evaluated under.
@@ -57,6 +60,7 @@ impl Flag {
             value,
             variant: flag_json["variant"].as_str().map(str::to_string),
             experiment: serde_json::from_value(flag_json["metadata"]["experiment"].clone()).ok(),
+            reason: flag_json["reason"].as_str().map(str::to_string),
         };
         Some(flag)
     }
@@ -148,6 +152,7 @@ impl Flags {
                 value: flag_result.value.clone(),
                 feature_id: flag_result.metadata.feature_id,
                 variant: flag_result.variant.clone(),
+                reason: Some(flag_result.reason.clone()),
                 ..Default::default()
             };
             flags.insert(feature_name.clone(), flag);
@@ -355,6 +360,43 @@ mod tests {
         // Then
         assert_eq!(flag.variant, None);
         assert_eq!(flag.experiment, None);
+    }
+
+    #[test]
+    fn flag_from_api_flag_carries_its_reason() {
+        // Given
+        let flag_json = serde_json::json!({
+            "feature_state_value": "hello premium user",
+            "feature": {"name": "banner", "id": 1},
+            "enabled": true,
+            "reason": "TARGETING_MATCH; segment=premium_users"
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&flag_json).unwrap();
+
+        // Then
+        assert_eq!(
+            flag.reason.as_deref(),
+            Some("TARGETING_MATCH; segment=premium_users")
+        );
+    }
+
+    #[test]
+    fn flag_from_api_flag_without_a_reason_has_none() {
+        // Given
+        let flag_json = serde_json::json!({
+            "feature_state_value": "hello",
+            "feature": {"name": "banner", "id": 1},
+            "enabled": true,
+            "reason": null
+        });
+
+        // When
+        let flag = Flag::from_api_flag(&flag_json).unwrap();
+
+        // Then
+        assert_eq!(flag.reason, None);
     }
 
     #[test]

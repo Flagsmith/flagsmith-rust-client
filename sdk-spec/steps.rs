@@ -18,6 +18,7 @@ pub struct SpecFlag {
     feature: String,
     enabled: bool,
     value: FlagsmithValue,
+    reason: Option<String>,
 }
 
 fn as_spec_flag(flag: Flag) -> SpecFlag {
@@ -25,6 +26,7 @@ fn as_spec_flag(flag: Flag) -> SpecFlag {
         feature: flag.feature_name,
         enabled: flag.enabled,
         value: flag.value,
+        reason: flag.reason,
     }
 }
 

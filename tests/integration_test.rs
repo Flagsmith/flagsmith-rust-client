@@ -94,6 +94,7 @@ fn test_get_environment_flags_uses_local_environment_when_available(
         all_flags[0].value_as_string().unwrap(),
         fixtures::FEATURE_1_STR_VALUE
     );
+    assert_eq!(all_flags[0].reason.as_deref(), Some("STATIC"));
     api_mock.assert();
 }
 
@@ -120,12 +121,14 @@ fn test_get_environment_flags__local_evaluation_with_segment_reading_environment
 
     // When
     let flags = flagsmith.get_environment_flags().unwrap();
-    let flag_value = flags
-        .get_feature_value_as_string(fixtures::FEATURE_1_NAME)
-        .unwrap();
+    let flag = flags.get_flag(fixtures::FEATURE_1_NAME).unwrap();
 
     // Then
-    assert_eq!(flag_value, SEGMENT_OVERRIDE_VALUE);
+    assert_eq!(flag.value.value, SEGMENT_OVERRIDE_VALUE);
+    assert_eq!(
+        flag.reason.as_deref(),
+        Some("TARGETING_MATCH; segment=Test Segment")
+    );
     api_mock.assert();
 }
 
@@ -159,6 +162,7 @@ fn test_get_environment_flags_calls_api_when_no_local_environment(
         all_flags[0].value_as_string().unwrap(),
         fixtures::FEATURE_1_STR_VALUE
     );
+    assert_eq!(all_flags[0].reason.as_deref(), Some("STATIC"));
     api_mock.assert();
 }
 
@@ -274,6 +278,7 @@ fn test_get_identity_flags_uses_local_environment_when_available(
         all_flags[0].value_as_string().unwrap(),
         fixtures::FEATURE_1_STR_VALUE
     );
+    assert_eq!(all_flags[0].reason.as_deref(), Some("STATIC"));
     api_mock.assert();
 }
 
@@ -317,6 +322,7 @@ fn test_get_identity_flags_calls_api_when_no_local_environment_no_traits(
         all_flags[0].value_as_string().unwrap(),
         fixtures::FEATURE_1_STR_VALUE
     );
+    assert_eq!(all_flags[0].reason.as_deref(), Some("DEFAULT"));
 
     api_mock.assert();
 }

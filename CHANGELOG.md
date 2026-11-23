@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.4.0...v3.5.0) (2026-11-23)
+
+
+### Features
+
+* Every SDK includes `reason` in responses for identity and environment flags ([#87](https://github.com/Flagsmith/flagsmith-rust-client/issues/87)) ([8e9c3b3](https://github.com/Flagsmith/flagsmith-rust-client/commit/8e9c3b32d43a8a48e711ddc1232f50e04cf4dd91))
+
 ## [3.4.0](https://github.com/Flagsmith/flagsmith-rust-client/compare/v3.3.0...v3.4.0) (2026-11-13)
 
 
